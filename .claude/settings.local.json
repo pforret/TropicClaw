@@ -10,7 +10,19 @@
       "Bash(pmset:*)",
       "Bash(sudo pmset:*)",
       "WebFetch(domain:docs.openclaw.ai)",
-      "WebFetch(domain:alexop.dev)"
+      "WebFetch(domain:alexop.dev)",
+      "WebFetch(domain:github.com)",
+      "WebSearch",
+      "WebFetch(domain:smartscope.blog)",
+      "WebFetch(domain:pasqualepillitteri.it)",
+      "WebFetch(domain:runclauderun.com)",
+      "WebFetch(domain:www.blle.co)",
+      "WebFetch(domain:temporal.io)",
+      "WebFetch(domain:fast.io)",
+      "WebFetch(domain:www.agent-zero.ai)",
+      "WebFetch(domain:deepwiki.com)",
+      "WebFetch(domain:crates.io)",
+      "WebFetch(domain:lib.rs)"
     ]
   }
 }
