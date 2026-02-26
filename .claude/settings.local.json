@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(git:*)",
+      "Bash(defaults read:*)",
+      "Bash(defaults write:*)",
+      "Bash(killall:*)",
+      "Bash(sw_vers:*)",
+      "Bash(pmset:*)",
+      "Bash(sudo pmset:*)",
+      "WebFetch(domain:docs.openclaw.ai)",
+      "WebFetch(domain:alexop.dev)"
+    ]
+  }
+}
