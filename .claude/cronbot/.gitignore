@@ -1,0 +1,7 @@
+# cronbot runtime state (gitignore)
+locks/
+logs/
+*.memory.md
+
+# Keep job definitions tracked
+!jobs/*.md

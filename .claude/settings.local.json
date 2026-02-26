@@ -22,7 +22,15 @@
       "WebFetch(domain:www.agent-zero.ai)",
       "WebFetch(domain:deepwiki.com)",
       "WebFetch(domain:crates.io)",
-      "WebFetch(domain:lib.rs)"
+      "WebFetch(domain:lib.rs)",
+      "Bash(mkdir:*)",
+      "Bash(chmod +x:*)",
+      "Bash(/Users/pforret/Code/AI/TropicClaw/.claude/cronbot/cronbot.sh check:*)",
+      "Bash(.claude/cronbot/cronbot.sh list:*)",
+      "Bash(.claude/cronbot/cronbot.sh test:*)",
+      "Bash(.claude/cronbot/cronbot.sh run:*)",
+      "Bash(shellcheck:*)",
+      "Bash(.claude/cronbot/cronbot.sh:*)"
     ]
   }
 }

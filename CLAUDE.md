@@ -24,6 +24,23 @@ For each OpenClaw subsystem, determine what Claude Code already provides nativel
 - **Skills**: which OpenClaw skills already exist as Claude Code skills or document-skills?
 - **Missing pieces**: what requires building from scratch (gateway, channel adapters, memory subsystem)?
 
+## Scheduling
+
+You can manage your own scheduled jobs. Job files live in `.claude/cronbot/jobs/`.
+
+- To schedule a new task: create a `.md` file in `jobs/` with cron frontmatter
+- To pause a job: set `enabled: false` in frontmatter
+- To change frequency: edit the `cron:` field
+- To cancel: delete the file
+- To see what's scheduled: run `.claude/cronbot/cronbot.sh list`
+- To persist context across runs: write to `<job>.memory.md` in the same directory
+
+### Safety in scheduled jobs
+
+Jobs run non-interactively with `--dangerously-skip-permissions` (or `--sandbox` if `sandbox: true`).
+Each job `.md` file MUST include a "Safety guardrails" section defining what the job is NOT allowed to do.
+Self-terminate (exit early) if about to perform a dangerous or irreversible action not covered by guardrails.
+
 ## Key Reference
 
 - OpenClaw architecture doc: `docs/AI-assistant/OPENCLAW_ARCHITECTURE.md` (in [clarabot repo](https://github.com/pforret/clarabot))
