@@ -35,12 +35,12 @@ The Agent Runtime manages conversation state and agent execution:
 
 | Gap                                | Severity | Notes                                                             |
 |------------------------------------|----------|-------------------------------------------------------------------|
-| No append-only session logs        | MEDIUM   | Transcripts exist but aren't in a structured audit format         |
+| No append-only session logs        | ~~MEDIUM~~ → **ADDRESSED** | Addressed by `auditlog.sh` — hook-based JSON-lines logging |
 | No multi-agent orchestration       | HIGH     | Cannot run multiple agents simultaneously with different personas |
 | No agent-per-channel routing       | HIGH     | No mechanism to route messages from channel X to agent Y          |
 | No dynamic system prompt switching | MEDIUM   | `CLAUDE.md` is static within a session                            |
 | No agent registry                  | MEDIUM   | No way to define, list, and manage multiple agent configurations  |
-| No conversation indexing           | LOW      | Past sessions aren't searchable/queryable                         |
+| No conversation indexing           | ~~LOW~~ → **PARTIAL** | Keyword search via `auditlog search`; semantic search still requires Memory MCP |
 
 ## Build Recommendations
 
@@ -57,7 +57,7 @@ The Agent Runtime manages conversation state and agent execution:
        allowed_tools: [Bash, Read, Edit, Write]
    ```
 2. **Gateway-level routing** — The gateway process (see 01-gateway.md) routes incoming messages to the correct agent based on channel/user
-3. **Append-only logs via hooks** — Use `PostToolUse` and `Stop` hooks to append structured JSON events to a log file per session
+3. **Append-only logs via hooks** — ✅ Implemented as `auditlog.sh` (see [PRP](../../PRPs/2026-02-27-auditlog.md)). Uses `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SessionStart`, `SessionEnd` hooks to append JSON-lines per session. CLI provides search, list, stats, export.
 4. **Multi-agent via parallel `claude` processes** — Each agent runs as a separate `claude -p` invocation with its own `CLAUDE.md` and `allowed-tools`
 5. **Dynamic prompts via file switching** — Gateway writes the appropriate `CLAUDE.md` before invoking the agent
 
