@@ -8,7 +8,7 @@ This directory maps each OpenClaw subsystem against Claude Code's native capabil
 |---|------------------------------------------|------------------|-------------------------------------------------------|--------------------------------------------------------|
 | 1 | [Gateway](01-gateway.md)                 | **YELLOW**       | Hooks, Settings hierarchy, CLI `-p`, Remote Control   | No programmatic gateway (Remote Control is human-only) |
 | 2 | [Channels](02-channels.md)               | **RED**          | Slack MCP, Remote Control (web/mobile)                | No adapters for WhatsApp, Telegram, Discord, etc.      |
-| 3 | [Agent Runtime](03-agent-runtime.md)     | **YELLOW**       | Multi-turn, `CLAUDE.md`, Skills fork, `allowed-tools` | No multi-agent orchestration                           |
+| 3 | [Agent Runtime](03-agent-runtime.md)     | **YELLOW**       | Multi-turn, `CLAUDE.md`, Skills fork, `allowed-tools` | No multi-agent orchestration (audit logs ✅ via `auditlog.sh`) |
 | 4 | [Tools & Skills](04-tools-skills.md)     | **GREEN/YELLOW** | Bash, file tools, WebSearch, Skills, MCP              | No camera/location, limited sandboxing                 |
 | 5 | [Memory](05-memory.md)                   | **RED**          | `CLAUDE.md`, auto-memory files                        | No vector/semantic search                              |
 | 6 | [Self-Scheduling](06-self-scheduling.md) | **RED**          | None                                                  | No scheduler; agent cannot manage its own jobs         |

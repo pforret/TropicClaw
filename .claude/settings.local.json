@@ -30,7 +30,11 @@
       "Bash(.claude/cronbot/cronbot.sh test:*)",
       "Bash(.claude/cronbot/cronbot.sh run:*)",
       "Bash(shellcheck:*)",
-      "Bash(.claude/cronbot/cronbot.sh:*)"
+      "Bash(.claude/cronbot/cronbot.sh:*)",
+      "Bash(.claude/auditlog/auditlog.sh:*)",
+      "Bash(.claude/auditlog/auditlog.sh check:*)",
+      "Bash(.claude/auditlog/auditlog.sh list:*)",
+      "Bash(.claude/auditlog/auditlog.sh status:*)"
     ]
   }
 }
