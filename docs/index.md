@@ -31,6 +31,7 @@ Subsystem-by-subsystem comparison of OpenClaw vs Claude Code. Each page covers w
 | 5 | [Memory](gap/05-memory.md) | **RED** — no vector/semantic search |
 | 6 | [Self-Scheduling](gap/06-self-scheduling.md) | **RED** — no scheduler; agent can't manage its own jobs |
 | 7 | [Persona Templates](gap/07-persona-templates.md) | **YELLOW** — CLAUDE.md covers it, but unstructured |
+| 8 | [Web App Generation](gap/08-web-app-generation.md) | **YELLOW/RED** — can build apps, but no Canvas/A2UI live rendering |
 
 ### [Extending Claude Code](extend/index.md)
 

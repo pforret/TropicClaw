@@ -13,6 +13,7 @@ This directory maps each OpenClaw subsystem against Claude Code's native capabil
 | 5 | [Memory](05-memory.md)                   | **RED**          | `CLAUDE.md`, auto-memory files                        | No vector/semantic search                              |
 | 6 | [Self-Scheduling](06-self-scheduling.md) | **RED**          | None                                                  | No scheduler; agent cannot manage its own jobs         |
 | 7 | [Persona Templates](07-persona-templates.md) | **YELLOW** | `CLAUDE.md`, auto-memory, settings                    | No structured identity/user/tools schemas              |
+| 8 | [Web App Generation](08-web-app-generation.md) | **YELLOW/RED** | Full-stack app generation, Bash dev servers, Claude in Chrome | No Canvas/A2UI live rendering surface                  |
 
 ## Build Priority
 
@@ -50,3 +51,4 @@ These capabilities require **no custom development**:
 | Append-only audit logs | Hook + log service | Low |
 | Message normalization | Library/schema | Medium |
 | Self-scheduling MCP server | MCP server | Medium — CRUD tools, job runner, durable store |
+| Canvas MCP server | MCP server | Medium — HTTP + WebSocket, live HTML rendering |
