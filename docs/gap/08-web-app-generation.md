@@ -12,24 +12,58 @@ OpenClaw provides a **Canvas + A2UI (Agent-to-UI)** system that lets agents gene
 - **Security boundary** — Canvas serves agent-writable content in a separate security context
 - **Custom scheme** — local canvas content uses a custom URL scheme (no loopback server needed), with directory traversal blocked
 
+### canvas.eval — Full JavaScript Evaluation
+
+`canvas.eval` is not a simple HTML snippet renderer — it is a **full JavaScript evaluation engine** operating on a live WebView (WKWebView on macOS, WebView on Android, browser tab on web). The agent can:
+
+- **Manipulate the DOM**: `document.body.style.background='blue'`
+- **Draw on Canvas 2D**: Use `window.__openclaw` context for shapes, charts, diagrams
+- **Query page state**: `document.title`, `location.href` — read current state and return results to the agent
+- **Inject entire apps**: Load Chart.js, D3.js, or any library; set up event handlers; build full interactive UIs
+
+The tool signature: `openclaw nodes invoke --node <nodeId> --command canvas.eval --params '{"javaScript":"<code>"}'`
+
 ### A2UI (Agent-to-UI) Format
 
-A2UI is a declarative data format optimized for agent-generated UIs:
+A2UI is an **open standard developed by Google** (Apache 2.0 licensed) that OpenClaw vendors into its codebase. It is a declarative data format optimized for agent-generated UIs:
 
 | Property | Description |
 |----------|-------------|
-| **Security-first** | Declarative, not executable code. Clients maintain a "catalog" of trusted, pre-approved UI components (Card, Button, TextField). Agents can only request components from the catalog. |
+| **Security-first** | Declarative, not executable code. Clients maintain a "catalog" of trusted, pre-approved UI components (Card, Button, TextField). Agents can only request components from the catalog — eliminating injection attacks. |
 | **LLM-friendly** | Flat list of components with ID references. Easy for LLMs to generate incrementally, enabling progressive rendering. |
 | **Framework-agnostic** | Same A2UI JSON renders on web components, Flutter widgets, React components, SwiftUI views, or any other framework. |
 | **Incremental updates** | Agent makes surgical changes to the UI as the conversation progresses. |
+| **Interactive** | Buttons with `a2ui-action` attributes send action events back through the canvas server to the agent as tool calls. Enables multi-step forms, surveys, configuration wizards. |
 
-### Canvas Flow
+**A2UI status:** v0.8 (Public Preview). Roadmap includes official React, Jetpack Compose, and SwiftUI renderers.
+
+### Content Delivery Architecture
+
+OpenClaw Canvas has **two content delivery paths**:
 
 ```
-Agent calls canvas.eval ──→ Canvas server receives HTML/A2UI
-                            ──→ WebSocket push to connected clients
-                            ──→ Browser/app renders the interface
++------------------+       WebSocket/JSON-RPC        +------------------+
+|                  | <-----------------------------> |                  |
+|   Agent Runtime  |    canvas.eval (JS via WS)      |  Gateway Server  |
+|   (LLM + Tools)  |    canvas.navigate              |  (port 18789)    |
+|                  |    canvas.a2ui.* (JSON)          |                  |
++------------------+                                  +--------+---------+
+                                                               |
+                                        HTTP: /__openclaw__/canvas/
+                                        Custom scheme: openclaw-canvas://
+                                                               |
+                                                      +--------v---------+
+                                                      |  Client WebView  |
+                                                      |  (WKWebView /    |
+                                                      |   WebView /      |
+                                                      |   Browser Tab)   |
+                                                      +------------------+
 ```
+
+1. **`canvas.eval` path** (WebSocket): JavaScript sent to the node's WebView for evaluation. Works through proxies. Lower-level, more flexible, less secure.
+2. **A2UI path** (HTTP + WebSocket): Declarative JSON rendered via the Gateway's canvas host at `localhost:18789/__openclaw__/canvas/`. More secure (component catalog), but requires direct HTTP connectivity.
+
+**File serving:** Canvas files stored at `~/Library/Application Support/OpenClaw/canvas/<session>/...` (macOS). The custom `openclaw-canvas://` scheme maps paths to local files. **Live reload**: the panel auto-reloads when local canvas files change.
 
 ### Platform Support
 
@@ -60,9 +94,10 @@ Agent calls canvas.eval ──→ Canvas server receives HTML/A2UI
 
 ### What Canvas Is NOT
 
-- **Not a full web app hosting platform** — Canvas renders agent-generated content within the client, not as a standalone hosted website
+- **Not a full web app hosting platform** — Canvas renders agent-generated content within the client, not as a standalone hosted website. However, the agent can separately use shell tools to scaffold and run standalone web servers on arbitrary ports.
 - **Not persistent** — content is session-scoped; it doesn't survive across sessions by default
 - **Not a web framework** — there's no build pipeline, routing, or database; it's a rendering surface
+- **Not a replacement for web app development** — for production apps (dashboards, SaaS), the agent would use shell tools to build a proper app; Canvas is for in-session visual output
 
 ## Claude Code Coverage
 
@@ -78,6 +113,8 @@ Claude Code can **generate complete web applications** — it writes code for fu
 | Deploy to hosting | Push to Vercel, Cloudflare, Railway via CLI tools | **Yes** |
 | Connect to dev servers | Next.js DevTools MCP connects to running Next.js at `localhost:3000/_next/mcp` | **Yes** |
 | Inline HTML preview | Claude.ai Artifacts render HTML/JS/React in sandboxed iframe | **Partial** (web only, not CLI) |
+| Background dev servers | `Ctrl+B` or `run_in_background` to run servers while continuing work | **Yes** (CLI/Desktop only) |
+| Iterative verify loop | Generate code → start server → Chrome verify → fix → repeat | **Yes** (via Claude in Chrome) |
 
 ### What Claude Code CANNOT Do
 
@@ -98,6 +135,8 @@ Claude Code can **generate complete web applications** — it writes code for fu
 | **Claude in Chrome** | Claude can view/interact with the running app | For testing, not for rendering agent-generated content to users |
 | **Dev Browser Skill** | "Open localhost:3000 and verify the signup flow" | Testing tool, not a rendering surface |
 | **Community web UIs** | claude-code-webui, claude-code-web, etc. | Chat interfaces, not canvas-style rendering surfaces |
+
+**Important limitation:** Claude Code on the Web (cloud sandbox) **cannot bind to network ports** — it can *generate* web apps but cannot *serve* them. Generated code must be pulled via git and run locally. Only the CLI/Desktop version can start dev servers.
 
 ## Gap Analysis
 
@@ -158,11 +197,12 @@ This doesn't replicate Canvas but provides a practical workflow for "Claude buil
 
 ### 3. A2UI-Compatible Component Renderer (LOW priority, future)
 
-If the Canvas MCP server proves useful, extend it with an A2UI-compatible component catalog:
-- Define a JSON schema for UI components (Card, Button, TextField, List, Chart, etc.)
-- Render them as web components or React components
+A2UI is a [Google open standard](https://github.com/google/A2UI) (Apache 2.0) — not OpenClaw-specific. If the Canvas MCP server proves useful, extend it with an A2UI-compatible renderer:
+- Use the official A2UI JSON schema for UI components (Card, Button, TextField, List, Chart, etc.)
+- Render them as web components or React components in the Canvas MCP client
+- Support `a2ui-action` attributes for interactive callbacks (button clicks → agent tool calls)
 - Allow incremental updates (patch by component ID)
-- This would achieve near-parity with OpenClaw's A2UI system
+- This would achieve near-parity with OpenClaw's A2UI system and could leverage A2UI's planned official renderers
 
 ## Comparison: OpenClaw Canvas vs Claude Code Approaches
 
