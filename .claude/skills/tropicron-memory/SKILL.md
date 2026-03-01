@@ -1,12 +1,12 @@
 ---
-name: cronbot-memory
-description: How cronbot per-job memory works
+name: tropicron-memory
+description: How tropicron per-job memory works
 user-invocable: false
 ---
 
 ## Per-Job Memory
 
-Each cronbot job can have a `<job>.memory.md` sibling file for persistent context.
+Each tropicron job can have a `<job>.memory.md` sibling file for persistent context.
 
 - When `memory: true` in frontmatter, the memory file is prepended to the prompt
 - Claude is instructed to update the memory file with important findings
@@ -15,7 +15,7 @@ Each cronbot job can have a `<job>.memory.md` sibling file for persistent contex
 
 ### Memory file location
 
-`<job>.memory.md` lives next to `<job>.md` in `.claude/cronbot/jobs/`
+`<job>.memory.md` lives next to `<job>.md` in `.claude/tropicron/jobs/`
 
 ### What to store in memory
 

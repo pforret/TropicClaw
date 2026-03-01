@@ -69,6 +69,53 @@ OpenClaw's memory system provides persistent, searchable context:
                               └──────────────────┘
 ```
 
+## Learning Loops (Memory Feedback Stage)
+
+Beyond storage and retrieval, OpenClaw's memory includes a **learning loop** — a feedback stage where the agent processes its own experiences and writes improved knowledge back to the memory store. This is what makes the agent get better over time.
+
+### The Loop
+
+```
+Session → Post-session hook → Evaluate → Extract → Store → Pre-session injection → Next session
+```
+
+| Stage | What happens |
+|---|---|
+| **Summarize** | Compress the session into key facts, decisions, outcomes |
+| **Evaluate** | Did the agent perform well? Were there errors, dead ends, or user corrections? |
+| **Extract** | Identify reusable knowledge: patterns, user preferences, tool quirks, domain facts |
+| **Classify** | Tag extracted knowledge by type (fact, preference, procedure, correction) and scope (user, project, global) |
+| **Store** | Write to memory store with embeddings and metadata for future retrieval |
+| **Prune** | Update or expire outdated memories that conflict with new knowledge |
+
+### What This Enables
+
+- **Self-correction** — agent notices recurring mistakes and writes a note to avoid them
+- **Preference learning** — "user always wants TypeScript, not JavaScript" gets stored after 2-3 corrections
+- **Domain accumulation** — facts about the codebase, APIs, and infrastructure build up over sessions
+- **Tool mastery** — agent records which approaches worked/failed for specific tool combinations
+
+### Claude Code Coverage
+
+| Feature | Status | Notes |
+|---|---|---|
+| Post-session processing | Partial | `Stop` hook can trigger post-session scripts |
+| Session summarization | No | No built-in summarizer; must be custom |
+| Self-evaluation | No | Agent cannot review its own past performance |
+| Knowledge extraction | No | No structured extraction pipeline |
+| Memory update/prune | Partial | Can edit auto-memory files, but no conflict resolution |
+
+### Implementation
+
+The learning loop is a **scheduled job** (see [06-self-scheduling.md](06-self-scheduling.md)) that runs post-session or on a daily schedule:
+
+1. **Post-session hook** triggers a `claude -p` call with the session log (from tropiclog)
+2. The learning agent summarizes, evaluates, and extracts knowledge
+3. Extracted knowledge is written to the memory MCP server with appropriate metadata
+4. A nightly "consolidation" job merges, deduplicates, and prunes the memory store
+
+This connects self-scheduling (mechanism) → memory (storage) → agent runtime (improved prompts).
+
 ## Verdict
 
-**RED** — The memory subsystem is the widest gap. Claude Code's file-based memory (`CLAUDE.md`, auto-memory) provides basic persistence but none of the semantic search, hybrid retrieval, or scoped filtering that OpenClaw requires. A dedicated memory MCP server must be built, likely the highest-priority custom component.
+**RED** — The memory subsystem is the widest gap. Claude Code's file-based memory (`CLAUDE.md`, auto-memory) provides basic persistence but none of the semantic search, hybrid retrieval, scoped filtering, or learning loops that OpenClaw requires. A dedicated memory MCP server must be built, likely the highest-priority custom component. The learning loop adds a feedback stage that transforms memory from passive storage into active self-improvement.

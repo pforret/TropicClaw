@@ -89,6 +89,37 @@ The agent writes schedule definitions to a JSON/YAML file. An external watcher p
 
 **Option A (MCP server)** provides the cleanest integration. The agent calls `schedule.create` the same way it calls any other tool, the MCP server handles persistence and execution, and the agent can query `schedule.list` to see its own jobs. This matches OpenClaw's model most closely.
 
+## Reference Job Catalog
+
+Beyond the scheduling mechanism, OpenClaw ships with **proactive job templates** — predefined scheduled tasks that make the agent useful out of the box. These are the "killer app" of self-scheduling: the agent doesn't just respond, it *initiates*.
+
+### Proactive Patterns
+
+| Job | Schedule | What it does | Outbound notification |
+|---|---|---|---|
+| **Morning briefing** | Daily 08:00 | Summarize overnight activity: new emails, GitHub notifications, calendar, weather | Send summary to preferred channel |
+| **GitHub watch** | Every 30 min | Check for new PRs, issues, CI failures, review requests | Notify on actionable items only |
+| **Email triage** | Every 1 hour | Scan inbox, categorize, flag urgent items | Alert on urgent; batch the rest for briefing |
+| **System health** | Every 15 min | Check disk, CPU, memory, service status | Alert only on anomalies |
+| **Evening reflection** | Daily 21:00 | Review day's interactions, evaluate own performance, update memory | Send daily summary + "anything I should know?" |
+| **Weekly review** | Monday 09:00 | Aggregate week's activity, identify patterns, suggest schedule adjustments | Send report to preferred channel |
+| **Learning digest** | Daily 22:00 | Process today's sessions, extract knowledge, update memory store | Silent (internal only) |
+
+### Outbound Notifications
+
+Proactive jobs need a way to **reach the user** — this is the outbound notification problem. It's a scheduling concern, not a channel concern: the job decides *whether* to notify, and the channel adapter handles *how*.
+
+The pattern:
+1. Scheduled job runs and produces findings
+2. Job evaluates: "Is this worth interrupting the user?" (severity, urgency, user preferences)
+3. If yes → route message to user's preferred channel via channel adapter
+4. If no → log silently, include in next summary
+
+This requires:
+- A **notification routing config** (which channel, what hours, what severity threshold)
+- Integration between the scheduler and channel adapters
+- User preference for notification urgency levels (immediate / batch / silent)
+
 ## Verdict
 
-**RED** — Claude Code has no scheduling primitives. The agent cannot create, inspect, or modify recurring jobs. A dedicated scheduler component (ideally an MCP server) must be built to bridge this gap.
+**RED** — Claude Code has no scheduling primitives. The agent cannot create, inspect, or modify recurring jobs. A dedicated scheduler component (ideally an MCP server) must be built to bridge this gap. Beyond the mechanism, a catalog of proactive job templates and an outbound notification routing layer are needed to deliver the "agent that initiates" experience.

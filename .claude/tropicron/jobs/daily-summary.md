@@ -5,7 +5,7 @@ timeout: 300
 description: "Summarize today's tasks and priorities"
 singleton: true
 memory: true
-notify_on_failure: "echo \"$(date +%Y-%m-%dT%H:%M) FAIL: $JOB_NAME - $JOB_ERROR\" >> $HOME/log/cronbot/notifications.log"
+notify_on_failure: "echo \"$(date +%Y-%m-%dT%H:%M) FAIL: $JOB_NAME - $JOB_ERROR\" >> $HOME/log/tropicron/notifications.log"
 ---
 
 # Daily Summary

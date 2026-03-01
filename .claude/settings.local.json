@@ -25,16 +25,17 @@
       "WebFetch(domain:lib.rs)",
       "Bash(mkdir:*)",
       "Bash(chmod +x:*)",
-      "Bash(/Users/pforret/Code/AI/TropicClaw/.claude/cronbot/cronbot.sh check:*)",
-      "Bash(.claude/cronbot/cronbot.sh list:*)",
-      "Bash(.claude/cronbot/cronbot.sh test:*)",
-      "Bash(.claude/cronbot/cronbot.sh run:*)",
+      "Bash(/Users/pforret/Code/AI/TropicClaw/.claude/tropicron/tropicron.sh check:*)",
+      "Bash(.claude/tropicron/tropicron.sh list:*)",
+      "Bash(.claude/tropicron/tropicron.sh test:*)",
+      "Bash(.claude/tropicron/tropicron.sh run:*)",
       "Bash(shellcheck:*)",
-      "Bash(.claude/cronbot/cronbot.sh:*)",
-      "Bash(.claude/auditlog/auditlog.sh:*)",
-      "Bash(.claude/auditlog/auditlog.sh check:*)",
-      "Bash(.claude/auditlog/auditlog.sh list:*)",
-      "Bash(.claude/auditlog/auditlog.sh status:*)"
+      "Bash(.claude/tropicron/tropicron.sh:*)",
+      "Bash(.claude/tropiclog/tropiclog.sh:*)",
+      "Bash(.claude/tropiclog/tropiclog.sh check:*)",
+      "Bash(.claude/tropiclog/tropiclog.sh list:*)",
+      "Bash(.claude/tropiclog/tropiclog.sh status:*)",
+      "WebFetch(domain:telegraphic.substack.com)"
     ]
   }
 }

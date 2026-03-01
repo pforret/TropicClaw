@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 ### ==============================================================================
-### cronbot — Self-Modifiable Agent Scheduling System
-### Called every minute by crontab, decides fast whether to run any job,
-### and if so, launches it by passing a <JOB>.md file to `claude -p`.
+### tropiclog — Append-Only Audit Logging for Claude Code Sessions
+### Records every tool call, session start/end as JSON-lines via Claude Code hooks.
+### Provides CLI for querying, searching, and managing audit logs.
 ### ==============================================================================
 ###
 ### FOR LLMs: QUICK REFERENCE
@@ -10,29 +10,26 @@
 ### ADDING NEW VERBS: In Option:config(), add verb to the choice line
 ###                   then add a case block in Script:main(): newverb) do_newverb ;;
 ###
-### JOB FORMAT: .md files in jobs/ with YAML frontmatter:
-###   cron: "0 9 * * MON-FRI"    (required)
-###   enabled: true               (default: true)
-###   timeout: 300                (default: 300)
-###   singleton: false            (default: false — skip if previous still running)
-###   continue: false             (default: false — use --continue to resume session)
-###   memory: false               (default: false — load/save <job>.memory.md)
-###   sandbox: false              (default: false — use --sandbox instead of --dangerously-skip-permissions)
-###   model: sonnet               (optional)
-###   max_turns: 10               (optional)
-###   allowedTools: Read,Write    (optional)
-###   workdir: /path              (optional)
-###   notify_on_failure: "cmd"    (optional)
-###   notify_on_success: "cmd"    (optional)
+### HOOK ARCHITECTURE:
+###   Claude Code hooks → hooks/on-tool-use.sh (pre|post|failure)
+###                     → hooks/on-session.sh  (start|end)
+###   Hooks append JSON-lines to logs/sessions/<session-id>.jsonl
+###   This CLI reads those files for querying/management.
+###
+### LOG FORMAT (JSON-lines, one entry per line):
+###   {"ts":"2026-02-27T14:30:45Z","event":"tool_call","session":"abc","tool":"Bash","input_summary":"git status","seq":1}
+###   {"ts":"2026-02-27T14:30:47Z","event":"tool_result","session":"abc","tool":"Bash","status":"success","output_lines":15,"seq":2}
+###   {"ts":"2026-02-27T14:30:45Z","event":"session_start","session":"abc","seq":0}
+###   {"ts":"2026-02-27T14:31:00Z","event":"session_end","session":"abc","tool_calls":5,"errors":0,"seq":6}
 ### ==============================================================================
 
-### Created by Peter Forret ( pforret ) on 2026-02-26
+### Created by Peter Forret ( pforret ) on 2026-02-27
 ### Based on https://github.com/pforret/bashew 1.22.1
 script_version="0.1.0"
 readonly script_author="peter@forret.com"
-readonly script_created="2026-02-26"
-readonly run_as_root=-1
-readonly script_description="Self-modifiable agent scheduling system for Claude Code"
+readonly script_created="2026-02-27"
+readonly run_as_root=0
+readonly script_description="Append-only audit logging for Claude Code sessions"
 
 function Option:config() {
   grep <<<"
@@ -40,11 +37,13 @@ flag|h|help|show usage
 flag|Q|QUIET|no output
 flag|V|VERBOSE|also show debug messages
 flag|f|FORCE|do not ask for confirmation (always yes)
-option|L|LOG_DIR|folder for log files|${CRONBOT_LOG_DIR:-$HOME/log/cronbot}
-option|T|TMP_DIR|folder for temp files|/tmp/cronbot
-option|J|JOB_DIR|folder for job definitions|${CRONBOT_JOB_DIR:-}
-choice|1|action|action to perform|run,list,add,remove,enable,disable,history,test,install,uninstall,check,env
-param|?|input|job name or file path
+option|L|LOG_DIR|folder for session logs|${AUDITLOG_LOG_DIR:-}
+option|T|TMP_DIR|folder for temp files|/tmp/tropiclog
+option|F|FORMAT|export format (json, csv, text)|json
+option|D|DAYS|max age in days for clean|30
+option|N|LINES|number of lines for tail|20
+choice|1|action|action to perform|status,search,list,stats,export,tail,clean,install,uninstall,check
+param|?|input|query, session id, or subcommand (sessions, tools, errors)
 " -v -e '^#' -e '^\s*$'
 }
 
@@ -55,67 +54,68 @@ param|?|input|job name or file path
 function Script:main() {
   IO:log "[$script_basename] $script_version started"
 
-  # Default JOB_DIR to jobs/ subfolder of script location
-  [[ -z "$JOB_DIR" ]] && JOB_DIR="$script_install_folder/jobs"
+  # Default LOG_DIR to logs/sessions subfolder of script location
+  [[ -z "$LOG_DIR" ]] && LOG_DIR="$script_install_folder/logs/sessions"
+
+  # Override log_file to avoid polluting session JSONL files
+  # (bashew's Script:initialize sets log_file in LOG_DIR, but we need it separate)
+  log_file="$script_install_folder/logs/tropiclog.$execution_day.log"
+  mkdir -p "$script_install_folder/logs"
 
   case "${action,,}" in
-  run)
-    #TIP: use «$script_prefix run» to check schedule and execute matching jobs
-    #TIP:> $script_prefix run
-    do_run
+  status)
+    #TIP: use «$script_prefix status» to show audit logging status
+    #TIP:> $script_prefix status
+    do_status
+    ;;
+  search)
+    #TIP: use «$script_prefix search <query>» to search all audit logs
+    #TIP:> $script_prefix search "Bash"
+    do_search "$input"
     ;;
   list)
-    #TIP: use «$script_prefix list» to show all jobs with status
-    #TIP:> $script_prefix list
-    do_list
+    #TIP: use «$script_prefix list» to list sessions (default), tools, or errors
+    #TIP:> $script_prefix list sessions
+    #TIP:> $script_prefix list tools
+    #TIP:> $script_prefix list errors
+    do_list "${input:-sessions}"
     ;;
-  add)
-    #TIP: use «$script_prefix add <file.md>» to add a job file
-    #TIP:> $script_prefix add myjob.md
-    do_add "$input"
+  stats)
+    #TIP: use «$script_prefix stats [session-id]» to show tool usage statistics
+    #TIP:> $script_prefix stats
+    #TIP:> $script_prefix stats abc123
+    do_stats "$input"
     ;;
-  remove)
-    #TIP: use «$script_prefix remove <name>» to remove a job
-    #TIP:> $script_prefix remove myjob
-    do_remove "$input"
+  export)
+    #TIP: use «$script_prefix export [session-id]» to export logs (--FORMAT json|csv|text)
+    #TIP:> $script_prefix export
+    #TIP:> $script_prefix export abc123 --FORMAT csv
+    do_export "$input"
     ;;
-  enable)
-    #TIP: use «$script_prefix enable <name>» to enable a paused job
-    #TIP:> $script_prefix enable myjob
-    do_enable "$input"
+  tail)
+    #TIP: use «$script_prefix tail [session-id]» to show recent log entries
+    #TIP:> $script_prefix tail
+    do_tail "$input"
     ;;
-  disable)
-    #TIP: use «$script_prefix disable <name>» to disable a job without deleting
-    #TIP:> $script_prefix disable myjob
-    do_disable "$input"
-    ;;
-  history)
-    #TIP: use «$script_prefix history [name]» to show execution history
-    #TIP:> $script_prefix history myjob
-    do_history "$input"
-    ;;
-  test)
-    #TIP: use «$script_prefix test <name>» to dry-run a job (show what would execute)
-    #TIP:> $script_prefix test myjob
-    do_test "$input"
+  clean)
+    #TIP: use «$script_prefix clean» to remove logs older than --DAYS days (default 30)
+    #TIP:> $script_prefix clean --DAYS 7 --FORCE
+    do_clean
     ;;
   install)
-    #TIP: use «$script_prefix install» to set up the crontab entry
+    #TIP: use «$script_prefix install» to register hooks in settings.local.json
     #TIP:> $script_prefix install
     do_install
     ;;
   uninstall)
-    #TIP: use «$script_prefix uninstall» to remove the crontab entry
+    #TIP: use «$script_prefix uninstall» to remove hooks from settings.local.json
     #TIP:> $script_prefix uninstall
     do_uninstall
     ;;
-  check | env)
-    #TIP: use «$script_prefix check» to verify dependencies and config
+  check)
+    #TIP: use «$script_prefix check» to verify dependencies and hook registration
     #TIP:> $script_prefix check
-    Os:require "claude"
-    Os:require "awk"
-    Os:require "timeout"
-    Script:check
+    do_check
     ;;
   *)
     IO:die "action [$action] not recognized"
@@ -128,657 +128,682 @@ function Script:main() {
 ## Helper functions
 #####################################################################
 
-### --- Frontmatter parsing ---
-
-function parse_frontmatter() {
-  # Parse YAML frontmatter from a job .md file
-  # Sets JOB_* variables for each key found
-  local file="$1"
-  local in_frontmatter=0
-
-  # Reset all JOB_ variables
-  JOB_CRON=""
-  JOB_ENABLED="true"
-  JOB_TIMEOUT="300"
-  JOB_DESCRIPTION=""
-  JOB_MODEL=""
-  JOB_ALLOWEDTOOLS=""
-  JOB_WORKDIR=""
-  JOB_MAX_TURNS=""
-  JOB_APPEND_PROMPT=""
-  JOB_SINGLETON="false"
-  JOB_CONTINUE="false"
-  JOB_MEMORY="false"
-  JOB_SANDBOX="false"
-  JOB_NOTIFY_ON_FAILURE=""
-  JOB_NOTIFY_ON_SUCCESS=""
-
-  while IFS= read -r line; do
-    if [[ "$line" == "---" ]]; then
-      ((in_frontmatter++))
-      [[ $in_frontmatter -ge 2 ]] && break
-      continue
-    fi
-    if [[ $in_frontmatter -eq 1 ]]; then
-      # Skip empty lines and comments
-      [[ -z "$line" ]] && continue
-      [[ "$line" == \#* ]] && continue
-      local key value
-      key="${line%%:*}"
-      key="$(Str:trim "$key")"
-      value="${line#*:}"
-      value="$(Str:trim "$value")"
-      # Strip surrounding quotes
-      value="${value#\"}"
-      value="${value%\"}"
-      value="${value#\'}"
-      value="${value%\'}"
-      # Convert key to uppercase and set JOB_ variable
-      local var_name="JOB_${key^^}"
-      printf -v "$var_name" '%s' "$value"
-    fi
-  done <"$file"
+function get_session_dir() {
+  echo "$LOG_DIR"
 }
 
-function extract_prompt() {
-  # Return everything after the second '---' line
-  local file="$1"
-  awk '/^---$/{n++; next} n>=2' "$file"
+function get_settings_file() {
+  # Find git root and return settings.local.json path
+  local git_root
+  git_root=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+  if [[ -n "$git_root" ]]; then
+    echo "$git_root/.claude/settings.local.json"
+  else
+    echo "$script_install_folder/../settings.local.json"
+  fi
 }
 
-### --- Cron matching (awk-based, fast) ---
+function count_sessions() {
+  local session_dir
+  session_dir=$(get_session_dir)
+  if [[ -d "$session_dir" ]]; then
+    find "$session_dir" -name "*.jsonl" -type f 2>/dev/null | wc -l | xargs
+  else
+    echo 0
+  fi
+}
 
-function get_matching_jobs() {
-  # Collect enabled jobs and match cron expressions via single awk call
-  # Outputs matching job names (one per line)
-  local job_lines=""
+function count_entries() {
+  local file="$1"
+  if [[ -f "$file" ]]; then
+    wc -l <"$file" | xargs
+  else
+    echo 0
+  fi
+}
 
-  if [[ ! -d "$JOB_DIR" ]]; then
-    IO:debug "No jobs directory: $JOB_DIR"
-    return
+function total_entries() {
+  local session_dir
+  session_dir=$(get_session_dir)
+  if [[ -d "$session_dir" ]]; then
+    cat "$session_dir"/*.jsonl 2>/dev/null | wc -l | xargs
+  else
+    echo 0
+  fi
+}
+
+function dir_size() {
+  local session_dir
+  session_dir=$(get_session_dir)
+  if [[ -d "$session_dir" ]]; then
+    du -sh "$session_dir" 2>/dev/null | cut -f1 | xargs
+  else
+    echo "0"
+  fi
+}
+
+function format_duration() {
+  local seconds=$1
+  if [[ $seconds -lt 60 ]]; then
+    echo "${seconds}s"
+  elif [[ $seconds -lt 3600 ]]; then
+    echo "$((seconds / 60))m $((seconds % 60))s"
+  else
+    echo "$((seconds / 3600))h $((seconds % 3600 / 60))m"
+  fi
+}
+
+function hooks_installed() {
+  local settings_file
+  settings_file=$(get_settings_file)
+  if [[ -f "$settings_file" ]] && command -v jq &>/dev/null; then
+    # Check if any hook references tropiclog
+    if jq -e '.hooks // {} | to_entries[] | .value[]?.hooks[]?.command // "" | test("tropiclog")' "$settings_file" &>/dev/null; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+function find_session_file() {
+  local session_id="$1"
+  local session_dir
+  session_dir=$(get_session_dir)
+
+  # Exact match
+  if [[ -f "${session_dir}/${session_id}.jsonl" ]]; then
+    echo "${session_dir}/${session_id}.jsonl"
+    return 0
   fi
 
-  local has_jobs=0
-  for job_file in "$JOB_DIR"/*.md; do
-    [[ ! -f "$job_file" ]] && continue
-    # Skip memory files
-    [[ "$(basename "$job_file")" == *.memory.md ]] && continue
-    has_jobs=1
+  # Prefix match
+  local matches
+  matches=$(find "$session_dir" -name "${session_id}*.jsonl" -type f 2>/dev/null)
+  if [[ -n "$matches" ]]; then
+    echo "$matches" | head -1
+    return 0
+  fi
 
-    local cron_expr enabled
-    cron_expr=$(awk '/^---$/{n++; next} n==1 && /^cron:/{gsub(/^cron: *"?|"? *$/,"",$0); print; exit}' "$job_file")
-    enabled=$(awk '/^---$/{n++; next} n==1 && /^enabled:/{gsub(/^enabled: *|^ */,"",$0); print; exit}' "$job_file")
-    [[ "${enabled:-true}" == "false" ]] && continue
-    [[ -z "$cron_expr" ]] && continue
-    job_lines+="$(basename "$job_file" .md)|${cron_expr}"$'\n'
+  return 1
+}
+
+#####################################################################
+## Command implementations
+#####################################################################
+
+function do_status() {
+  IO:print "## Audit Log Status"
+  IO:print ""
+
+  # Hook status
+  if hooks_installed; then
+    IO:print "Hooks     : ${txtInfo}installed${txtReset}"
+  else
+    IO:print "Hooks     : ${txtWarn}not installed${txtReset} (run: $script_basename install)"
+  fi
+
+  # Log directory
+  local session_dir
+  session_dir=$(get_session_dir)
+  IO:print "Log dir   : $session_dir"
+
+  # Statistics
+  local sessions entries size
+  sessions=$(count_sessions)
+  entries=$(total_entries)
+  size=$(dir_size)
+
+  IO:print "Sessions  : $sessions"
+  IO:print "Entries   : $entries"
+  IO:print "Disk size : $size"
+
+  # Most recent session
+  if [[ "$sessions" -gt 0 ]]; then
+    local latest
+    latest=$(ls -t "$session_dir"/*.jsonl 2>/dev/null | head -1)
+    if [[ -n "$latest" ]]; then
+      local latest_name latest_entries latest_time
+      latest_name=$(basename "$latest" .jsonl)
+      latest_entries=$(count_entries "$latest")
+      latest_time=$(head -1 "$latest" | jq -r '.ts // "?"' 2>/dev/null || echo "?")
+      IO:print ""
+      IO:print "Latest    : ${latest_name} (${latest_entries} entries, started ${latest_time})"
+    fi
+  fi
+}
+
+function do_search() {
+  local query="$1"
+  [[ -z "$query" ]] && IO:die "Usage: $script_basename search <query>"
+
+  local session_dir
+  session_dir=$(get_session_dir)
+  [[ ! -d "$session_dir" ]] && IO:print "No audit logs found." && return 0
+
+  IO:print "## Search: \"$query\""
+  IO:print ""
+
+  local match_count=0
+  local file_count=0
+
+  for log_file in "$session_dir"/*.jsonl; do
+    [[ ! -f "$log_file" ]] && continue
+    local matches
+    matches=$(grep -i "$query" "$log_file" 2>/dev/null || true)
+    if [[ -n "$matches" ]]; then
+      ((file_count++))
+      local session_name
+      session_name=$(basename "$log_file" .jsonl)
+      IO:print "${txtBold}Session: ${session_name}${txtReset}"
+
+      while IFS= read -r line; do
+        ((match_count++))
+        if command -v jq &>/dev/null; then
+          local ts event tool summary
+          ts=$(echo "$line" | jq -r '.ts // ""' 2>/dev/null)
+          event=$(echo "$line" | jq -r '.event // ""' 2>/dev/null)
+          tool=$(echo "$line" | jq -r '.tool // ""' 2>/dev/null)
+          summary=$(echo "$line" | jq -r '.input_summary // .error // ""' 2>/dev/null)
+          printf "  %s  %-14s %-10s %s\n" "$ts" "$event" "$tool" "$summary"
+        else
+          echo "  $line"
+        fi
+      done <<<"$matches"
+      IO:print ""
+    fi
   done
 
-  [[ $has_jobs -eq 0 ]] && return
-  [[ -z "$job_lines" ]] && return
-
-  # Single awk call: match all cron expressions against current time
-  echo "$job_lines" | awk -v now_min="$(date +%-M)" \
-    -v now_hour="$(date +%-H)" \
-    -v now_dom="$(date +%-d)" \
-    -v now_month="$(date +%-m)" \
-    -v now_dow="$(date +%-u)" \
-    'BEGIN { FS="|"
-    split("MON,TUE,WED,THU,FRI,SAT,SUN", dn, ",")
-    for (i in dn) dow_map[dn[i]] = i
-  }
-  function field_match(pattern, value, fmin, fmax,    parts, i, lo, hi, step, rng, v) {
-    if (pattern == "*") return 1
-    step = 1
-    if (index(pattern, "/")) {
-      split(pattern, parts, "/")
-      step = parts[2] + 0
-      pattern = parts[1]
-    }
-    if (pattern == "*") {
-      return ((value - fmin) % step == 0) ? 1 : 0
-    }
-    split(pattern, parts, ",")
-    for (i in parts) {
-      gsub(/ /, "", parts[i])
-      if (toupper(parts[i]) in dow_map) parts[i] = dow_map[toupper(parts[i])]
-      if (index(parts[i], "-")) {
-        split(parts[i], rng, "-")
-        lo = (toupper(rng[1]) in dow_map) ? dow_map[toupper(rng[1])] : rng[1] + 0
-        hi = (toupper(rng[2]) in dow_map) ? dow_map[toupper(rng[2])] : rng[2] + 0
-        for (v = lo; v <= hi; v += step) {
-          if (v == value) return 1
-        }
-      } else {
-        if (parts[i] + 0 == value) return 1
-      }
-    }
-    return 0
-  }
-  /\|/ {
-    job = $1; cron = $2
-    split(cron, f, " ")
-    if (field_match(f[1], now_min, 0, 59) &&
-        field_match(f[2], now_hour, 0, 23) &&
-        field_match(f[3], now_dom, 1, 31) &&
-        field_match(f[4], now_month, 1, 12) &&
-        field_match(f[5], now_dow, 1, 7)) {
-      print job
-    }
-  }'
-}
-
-### --- Lock file mechanism ---
-
-function acquire_lock() {
-  local job_name="$1"
-  local is_singleton="${2:-false}"
-  local lock_dir="$script_install_folder/locks"
-  local lock_file="${lock_dir}/${job_name}.lock"
-
-  [[ ! -d "$lock_dir" ]] && mkdir -p "$lock_dir"
-
-  if [[ -f "$lock_file" ]]; then
-    local lock_pid lock_age
-    lock_pid=$(cat "$lock_file" 2>/dev/null)
-
-    # Get file modification time (cross-platform)
-    local file_mtime
-    if stat --version &>/dev/null; then
-      file_mtime=$(stat -c %Y "$lock_file" 2>/dev/null)
-    else
-      file_mtime=$(stat -f %m "$lock_file" 2>/dev/null)
-    fi
-    lock_age=$(( $(date +%s) - file_mtime ))
-
-    # Check if the locked process is still alive
-    if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
-      if [[ "$is_singleton" == "true" ]]; then
-        IO:debug "Singleton job $job_name still running (pid=$lock_pid, ${lock_age}s), skipping"
-        return 1
-      else
-        IO:debug "Job $job_name has overlapping run (pid=$lock_pid), proceeding anyway"
-      fi
-    else
-      # Process is gone — stale lock
-      IO:debug "Stale lock for $job_name (pid=$lock_pid gone, ${lock_age}s old), removing"
-      rm -f "$lock_file"
-    fi
-  fi
-
-  echo "$$" >"$lock_file"
-  return 0
-}
-
-function release_lock() {
-  local job_name="$1"
-  local lock_dir="$script_install_folder/locks"
-  rm -f "${lock_dir}/${job_name}.lock"
-}
-
-### --- Job execution ---
-
-function execute_job() {
-  local job_file="$1"
-  local job_name
-  job_name=$(basename "$job_file" .md)
-
-  # Build prompt: memory (optional) + job body
-  local prompt=""
-  local memory_file="${JOB_DIR}/${job_name}.memory.md"
-
-  if [[ "$JOB_MEMORY" == "true" ]]; then
-    if [[ -f "$memory_file" ]]; then
-      prompt="## Persistent Memory (from previous runs)"$'\n\n'
-      prompt+="$(cat "$memory_file")"
-      prompt+=$'\n\n---\n\n'
-    else
-      # Create empty memory file
-      echo "# Memory: ${job_name}" >"$memory_file"
-      echo "" >>"$memory_file"
-      echo "No previous runs recorded yet." >>"$memory_file"
-    fi
-  fi
-  prompt+="$(extract_prompt "$job_file")"
-
-  # Append memory-update instruction if memory is enabled
-  if [[ "$JOB_MEMORY" == "true" ]]; then
-    prompt+=$'\n\n---\n## Memory instruction\n'
-    prompt+="Update the file ${memory_file} with important findings, state, "
-    prompt+="or decisions from this run that should persist for future runs. "
-    prompt+="Keep it concise. Preserve useful info from previous runs."
-  fi
-
-  # Append date context if append_prompt is set
-  if [[ -n "$JOB_APPEND_PROMPT" ]]; then
-    prompt+=$'\n\n'"$JOB_APPEND_PROMPT"
-  fi
-
-  local job_log_dir="${LOG_DIR}/jobs/${job_name}"
-  [[ ! -d "$job_log_dir" ]] && mkdir -p "$job_log_dir"
-  # Cleanup old logs (older than 30 days)
-  find "$job_log_dir" -name "*.log" -mtime +30 -delete 2>/dev/null || true
-  local log_file="${job_log_dir}/$(date +%Y-%m-%d_%H%M).log"
-
-  # Build claude invocation args
-  local claude_args=()
-  if [[ "$JOB_CONTINUE" == "true" ]]; then
-    claude_args+=(--continue --print "$prompt")
-  else
-    claude_args+=(-p "$prompt")
-  fi
-  claude_args+=(--output-format text)
-
-  if [[ "$JOB_SANDBOX" == "true" ]]; then
-    claude_args+=(--sandbox)
-  else
-    claude_args+=(--dangerously-skip-permissions)
-  fi
-
-  # Optional flags
-  [[ -n "$JOB_MODEL" ]] && claude_args+=(--model "$JOB_MODEL")
-  [[ -n "$JOB_MAX_TURNS" ]] && claude_args+=(--max-turns "$JOB_MAX_TURNS")
-  [[ -n "$JOB_ALLOWEDTOOLS" ]] && claude_args+=(--allowedTools "$JOB_ALLOWEDTOOLS")
-
-  local workdir="${JOB_WORKDIR:-$script_install_folder}"
-
-  IO:log "Executing job: $job_name (timeout=${JOB_TIMEOUT}s)"
-
-  # Run in background subshell
-  (
-    cd "$workdir" || exit 1
-    local start_time
-    start_time=$(date +%s)
-    timeout "$JOB_TIMEOUT" claude "${claude_args[@]}" >"$log_file" 2>&1
-    local exit_code=$?
-    local duration=$(( $(date +%s) - start_time ))
-
-    if [[ $exit_code -eq 0 ]]; then
-      echo "---EXIT:0 DURATION:${duration}s---" >>"$log_file"
-      IO:log "Job $job_name completed successfully (${duration}s)"
-      if [[ -n "$JOB_NOTIFY_ON_SUCCESS" ]]; then
-        JOB_NAME="$job_name" eval "$JOB_NOTIFY_ON_SUCCESS" 2>/dev/null || true
-      fi
-    elif [[ $exit_code -eq 124 ]]; then
-      echo "---EXIT:TIMEOUT DURATION:${duration}s---" >>"$log_file"
-      IO:log "Job $job_name timed out after ${JOB_TIMEOUT}s"
-      if [[ -n "$JOB_NOTIFY_ON_FAILURE" ]]; then
-        JOB_NAME="$job_name" JOB_ERROR="timeout" eval "$JOB_NOTIFY_ON_FAILURE" 2>/dev/null || true
-      fi
-    else
-      echo "---EXIT:${exit_code} DURATION:${duration}s---" >>"$log_file"
-      IO:log "Job $job_name failed with exit code $exit_code (${duration}s)"
-      if [[ -n "$JOB_NOTIFY_ON_FAILURE" ]]; then
-        JOB_NAME="$job_name" JOB_ERROR="exit_${exit_code}" eval "$JOB_NOTIFY_ON_FAILURE" 2>/dev/null || true
-      fi
-    fi
-
-    release_lock "$job_name"
-  ) &
-}
-
-### --- Action implementations ---
-
-function do_run() {
-  # Core loop: called every minute by crontab
-  Os:require "claude"
-  Os:require "awk"
-
-  local matching_jobs
-  matching_jobs=$(get_matching_jobs)
-
-  if [[ -z "$matching_jobs" ]]; then
-    IO:debug "No matching jobs at $(date +%H:%M)"
-    return 0
-  fi
-
-  while IFS= read -r job_name; do
-    [[ -z "$job_name" ]] && continue
-    local job_file="${JOB_DIR}/${job_name}.md"
-
-    if [[ ! -f "$job_file" ]]; then
-      IO:alert "Job file not found: $job_file"
-      continue
-    fi
-
-    # Full frontmatter parse for this job
-    parse_frontmatter "$job_file"
-
-    # Singleton check
-    if ! acquire_lock "$job_name" "$JOB_SINGLETON"; then
-      continue
-    fi
-
-    execute_job "$job_file"
-    IO:log "Launched job: $job_name"
-  done <<<"$matching_jobs"
+  IO:print "Found $match_count match(es) across $file_count session(s)."
 }
 
 function do_list() {
-  if [[ ! -d "$JOB_DIR" ]]; then
-    IO:print "No jobs directory found at $JOB_DIR"
+  local subcommand="${1:-sessions}"
+  local session_dir
+  session_dir=$(get_session_dir)
+  [[ ! -d "$session_dir" ]] && IO:print "No audit logs found." && return 0
+
+  case "${subcommand,,}" in
+  sessions)
+    IO:print "## Sessions"
+    IO:print ""
+    printf "%-40s %-22s %-8s %-8s %s\n" "Session ID" "Started" "Entries" "Tools" "Errors"
+    printf "%-40s %-22s %-8s %-8s %s\n" "----------" "-------" "-------" "-----" "------"
+
+    for log_file in $(ls -t "$session_dir"/*.jsonl 2>/dev/null); do
+      [[ ! -f "$log_file" ]] && continue
+      local session_name entries tools errors started
+      session_name=$(basename "$log_file" .jsonl)
+      entries=$(count_entries "$log_file")
+
+      if command -v jq &>/dev/null; then
+        started=$(head -1 "$log_file" | jq -r '.ts // "?"' 2>/dev/null)
+        tools=$(grep -c '"event":"tool_call"' "$log_file" 2>/dev/null || echo 0)
+        errors=$(grep -c '"status":"error"' "$log_file" 2>/dev/null || echo 0)
+      else
+        started=$(head -1 "$log_file" | grep -o '"ts":"[^"]*"' | head -1 | cut -d'"' -f4)
+        tools=$(grep -c 'tool_call' "$log_file" 2>/dev/null || echo 0)
+        errors=$(grep -c '"error"' "$log_file" 2>/dev/null || echo 0)
+      fi
+
+      # Truncate session name for display
+      local display_name="$session_name"
+      [[ ${#display_name} -gt 38 ]] && display_name="${display_name:0:35}..."
+
+      printf "%-40s %-22s %-8s %-8s %s\n" "$display_name" "${started:-?}" "$entries" "$tools" "$errors"
+    done
+    ;;
+
+  tools)
+    IO:print "## Tool Usage (all sessions)"
+    IO:print ""
+
+    if command -v jq &>/dev/null; then
+      printf "%-20s %-10s %s\n" "Tool" "Calls" "Errors"
+      printf "%-20s %-10s %s\n" "----" "-----" "------"
+
+      cat "$session_dir"/*.jsonl 2>/dev/null |
+        jq -r 'select(.event == "tool_call" or .event == "tool_result") | .tool' 2>/dev/null |
+        sort | uniq -c | sort -rn |
+        while IFS=' ' read -r count tool; do
+          # Count is doubled (call + result), halve for tool calls
+          local calls=$(( count / 2 ))
+          [[ $calls -eq 0 ]] && calls=$count
+          local errors
+          errors=$(grep -l "\"tool\":\"$tool\"" "$session_dir"/*.jsonl 2>/dev/null |
+            xargs grep -c "\"status\":\"error\".*\"tool\":\"$tool\"" 2>/dev/null |
+            awk -F: '{sum += $2} END {print sum+0}')
+          printf "%-20s %-10s %s\n" "$tool" "$calls" "$errors"
+        done
+    else
+      IO:alert "jq is required for tool aggregation"
+      grep -oh '"tool":"[^"]*"' "$session_dir"/*.jsonl 2>/dev/null |
+        sort | uniq -c | sort -rn
+    fi
+    ;;
+
+  errors)
+    IO:print "## Errors (all sessions)"
+    IO:print ""
+
+    local found_errors=0
+    for log_file in $(ls -t "$session_dir"/*.jsonl 2>/dev/null); do
+      [[ ! -f "$log_file" ]] && continue
+      local error_lines
+      error_lines=$(grep '"status":"error"' "$log_file" 2>/dev/null || true)
+      [[ -z "$error_lines" ]] && continue
+
+      local session_name
+      session_name=$(basename "$log_file" .jsonl)
+      IO:print "${txtBold}Session: ${session_name}${txtReset}"
+
+      while IFS= read -r line; do
+        ((found_errors++))
+        if command -v jq &>/dev/null; then
+          local ts tool error
+          ts=$(echo "$line" | jq -r '.ts // ""' 2>/dev/null)
+          tool=$(echo "$line" | jq -r '.tool // ""' 2>/dev/null)
+          error=$(echo "$line" | jq -r '.error // "unknown"' 2>/dev/null)
+          printf "  %s  %-10s %s\n" "$ts" "$tool" "${error:0:80}"
+        else
+          echo "  $line"
+        fi
+      done <<<"$error_lines"
+      IO:print ""
+    done
+
+    [[ $found_errors -eq 0 ]] && IO:print "No errors found."
+    ;;
+
+  *)
+    IO:die "Unknown list subcommand: $subcommand (use: sessions, tools, errors)"
+    ;;
+  esac
+}
+
+function do_stats() {
+  local session_id="$1"
+  local session_dir
+  session_dir=$(get_session_dir)
+  [[ ! -d "$session_dir" ]] && IO:print "No audit logs found." && return 0
+
+  Os:require "jq"
+
+  if [[ -n "$session_id" ]]; then
+    # Per-session stats
+    local log_file
+    log_file=$(find_session_file "$session_id") || IO:die "Session not found: $session_id"
+
+    IO:print "## Stats: $(basename "$log_file" .jsonl)"
+    IO:print ""
+
+    local entries tool_calls results errors
+    entries=$(count_entries "$log_file")
+    tool_calls=$(grep -c '"event":"tool_call"' "$log_file" 2>/dev/null || echo 0)
+    results=$(grep -c '"event":"tool_result"' "$log_file" 2>/dev/null || echo 0)
+    errors=$(grep -c '"status":"error"' "$log_file" 2>/dev/null || echo 0)
+
+    local first_ts last_ts
+    first_ts=$(head -1 "$log_file" | jq -r '.ts // "?"')
+    last_ts=$(tail -1 "$log_file" | jq -r '.ts // "?"')
+
+    IO:print "Entries     : $entries"
+    IO:print "Tool calls  : $tool_calls"
+    IO:print "Results     : $results"
+    IO:print "Errors      : $errors"
+    IO:print "Error rate  : $(awk "BEGIN {if ($tool_calls>0) printf \"%.1f%%\", ($errors/$tool_calls)*100; else print \"0%\"}")"
+    IO:print "First entry : $first_ts"
+    IO:print "Last entry  : $last_ts"
+    IO:print ""
+
+    IO:print "### Tool breakdown"
+    printf "%-20s %s\n" "Tool" "Calls"
+    printf "%-20s %s\n" "----" "-----"
+    grep '"event":"tool_call"' "$log_file" 2>/dev/null |
+      jq -r '.tool' 2>/dev/null |
+      sort | uniq -c | sort -rn |
+      while IFS=' ' read -r count tool; do
+        printf "%-20s %s\n" "${tool:-?}" "$count"
+      done
+  else
+    # Global stats
+    IO:print "## Global Stats"
+    IO:print ""
+
+    local sessions entries tool_calls errors
+    sessions=$(count_sessions)
+    entries=$(total_entries)
+    tool_calls=$(cat "$session_dir"/*.jsonl 2>/dev/null | grep -c '"event":"tool_call"' 2>/dev/null || echo 0)
+    errors=$(cat "$session_dir"/*.jsonl 2>/dev/null | grep -c '"status":"error"' 2>/dev/null || echo 0)
+
+    IO:print "Sessions    : $sessions"
+    IO:print "Total entries: $entries"
+    IO:print "Tool calls  : $tool_calls"
+    IO:print "Errors      : $errors"
+    IO:print "Error rate  : $(awk "BEGIN {if ($tool_calls>0) printf \"%.1f%%\", ($errors/$tool_calls)*100; else print \"0%\"}")"
+    IO:print "Disk size   : $(dir_size)"
+    IO:print ""
+
+    if [[ "$tool_calls" -gt 0 ]]; then
+      IO:print "### Top tools (all sessions)"
+      printf "%-20s %s\n" "Tool" "Calls"
+      printf "%-20s %s\n" "----" "-----"
+      cat "$session_dir"/*.jsonl 2>/dev/null |
+        grep '"event":"tool_call"' |
+        jq -r '.tool' 2>/dev/null |
+        sort | uniq -c | sort -rn | head -10 |
+        while read -r count tool; do
+          printf "%-20s %s\n" "${tool:-?}" "$count"
+        done
+    fi
+  fi
+}
+
+function do_export() {
+  local session_id="$1"
+  local session_dir
+  session_dir=$(get_session_dir)
+  [[ ! -d "$session_dir" ]] && IO:die "No audit logs found."
+
+  local files=()
+  if [[ -n "$session_id" ]]; then
+    local log_file
+    log_file=$(find_session_file "$session_id") || IO:die "Session not found: $session_id"
+    files=("$log_file")
+  else
+    while IFS= read -r f; do
+      files+=("$f")
+    done < <(find "$session_dir" -name "*.jsonl" -type f 2>/dev/null | sort)
+  fi
+
+  [[ ${#files[@]} -eq 0 ]] && IO:die "No log files to export."
+
+  case "${FORMAT,,}" in
+  json)
+    for f in "${files[@]}"; do
+      cat "$f"
+    done
+    ;;
+
+  csv)
+    echo "timestamp,event,session,tool,status,input_summary,output_lines,error,seq"
+    for f in "${files[@]}"; do
+      if command -v jq &>/dev/null; then
+        jq -r '[.ts, .event, .session, .tool, .status, .input_summary, .output_lines, .error, .seq] | map(. // "") | @csv' "$f" 2>/dev/null
+      else
+        IO:alert "jq required for CSV export; falling back to raw JSON"
+        cat "$f"
+      fi
+    done
+    ;;
+
+  text)
+    for f in "${files[@]}"; do
+      local session_name
+      session_name=$(basename "$f" .jsonl)
+      IO:print "=== Session: $session_name ==="
+      if command -v jq &>/dev/null; then
+        jq -r '
+          if .event == "session_start" then "[\(.ts)] SESSION START"
+          elif .event == "session_end" then "[\(.ts)] SESSION END (tools: \(.tool_calls // 0), errors: \(.errors // 0))"
+          elif .event == "tool_call" then "[\(.ts)] CALL \(.tool) — \(.input_summary // "")"
+          elif .event == "tool_result" and .status == "error" then "[\(.ts)] ERROR \(.tool) — \(.error // "unknown")"
+          elif .event == "tool_result" then "[\(.ts)] OK   \(.tool) (\(.output_lines // 0) lines)"
+          else "[\(.ts)] \(.event)"
+          end' "$f" 2>/dev/null
+      else
+        cat "$f"
+      fi
+      IO:print ""
+    done
+    ;;
+
+  *)
+    IO:die "Unknown format: $FORMAT (use: json, csv, text)"
+    ;;
+  esac
+}
+
+function do_tail() {
+  local session_id="$1"
+  local session_dir
+  session_dir=$(get_session_dir)
+  [[ ! -d "$session_dir" ]] && IO:print "No audit logs found." && return 0
+
+  local log_file
+  if [[ -n "$session_id" ]]; then
+    log_file=$(find_session_file "$session_id") || IO:die "Session not found: $session_id"
+  else
+    # Most recently modified file
+    log_file=$(ls -t "$session_dir"/*.jsonl 2>/dev/null | head -1)
+    [[ -z "$log_file" ]] && IO:print "No audit logs found." && return 0
+  fi
+
+  local session_name
+  session_name=$(basename "$log_file" .jsonl)
+  IO:print "## Tail: $session_name (last $LINES entries)"
+  IO:print ""
+
+  if command -v jq &>/dev/null; then
+    tail -n "$LINES" "$log_file" |
+      jq -r '
+        if .event == "session_start" then "[\(.ts)] SESSION START"
+        elif .event == "session_end" then "[\(.ts)] SESSION END (tools: \(.tool_calls // 0), errors: \(.errors // 0))"
+        elif .event == "tool_call" then "[\(.ts)] CALL \(.tool) — \(.input_summary // "")"
+        elif .event == "tool_result" and .status == "error" then "[\(.ts)] ERROR \(.tool) — \(.error // "unknown")"
+        elif .event == "tool_result" then "[\(.ts)] OK   \(.tool) (\(.output_lines // 0) lines)"
+        else "[\(.ts)] \(.event)"
+        end' 2>/dev/null
+  else
+    tail -n "$LINES" "$log_file"
+  fi
+}
+
+function do_clean() {
+  local session_dir
+  session_dir=$(get_session_dir)
+  [[ ! -d "$session_dir" ]] && IO:print "No audit logs to clean." && return 0
+
+  local old_files
+  old_files=$(find "$session_dir" -name "*.jsonl" -type f -mtime "+$DAYS" 2>/dev/null)
+  local count
+  count=$(echo "$old_files" | grep -c '.' 2>/dev/null || echo 0)
+
+  if [[ "$count" -eq 0 || -z "$old_files" ]]; then
+    IO:print "No log files older than $DAYS days."
     return 0
   fi
 
-  local has_jobs=0
-  # Print header
-  printf "%-20s %-18s %-8s %-22s %s\n" "Job" "Cron" "Enabled" "Last Run" "Description"
-  printf "%-20s %-18s %-8s %-22s %s\n" "---" "----" "-------" "--------" "-----------"
-
-  for job_file in "$JOB_DIR"/*.md; do
-    [[ ! -f "$job_file" ]] && continue
-    [[ "$(basename "$job_file")" == *.memory.md ]] && continue
-    has_jobs=1
-
-    parse_frontmatter "$job_file"
-    local job_name
-    job_name=$(basename "$job_file" .md)
-
-    # Find last run from logs
-    local last_run="—"
-    local job_log_dir="${LOG_DIR}/jobs/${job_name}"
-    if [[ -d "$job_log_dir" ]]; then
-      local latest_log
-      latest_log=$(ls -t "$job_log_dir"/*.log 2>/dev/null | head -1)
-      if [[ -n "$latest_log" ]]; then
-        last_run=$(basename "$latest_log" .log | tr '_' ' ')
-      fi
-    fi
-
-    local enabled_mark="yes"
-    [[ "$JOB_ENABLED" == "false" ]] && enabled_mark="no"
-
-    # Check if running (lock exists)
-    local lock_file="$script_install_folder/locks/${job_name}.lock"
-    if [[ -f "$lock_file" ]]; then
-      local lock_pid
-      lock_pid=$(cat "$lock_file" 2>/dev/null)
-      if kill -0 "$lock_pid" 2>/dev/null; then
-        enabled_mark="RUNNING"
-      fi
-    fi
-
-    printf "%-20s %-18s %-8s %-22s %s\n" "$job_name" "$JOB_CRON" "$enabled_mark" "$last_run" "$JOB_DESCRIPTION"
-  done
-
-  if [[ $has_jobs -eq 0 ]]; then
-    IO:print "No jobs found in $JOB_DIR"
-  fi
-}
-
-function do_add() {
-  local source_file="$1"
-  [[ -z "$source_file" ]] && IO:die "Usage: $script_basename add <file.md>"
-  [[ ! -f "$source_file" ]] && IO:die "File not found: $source_file"
-
-  # Validate frontmatter has cron field
-  local cron_check
-  cron_check=$(awk '/^---$/{n++; next} n==1 && /^cron:/{print "ok"; exit}' "$source_file")
-  [[ -z "$cron_check" ]] && IO:die "Job file must have a 'cron:' field in YAML frontmatter"
-
-  [[ ! -d "$JOB_DIR" ]] && mkdir -p "$JOB_DIR"
-
-  local dest="${JOB_DIR}/$(basename "$source_file")"
-  if [[ -f "$dest" ]] && ! ((FORCE)); then
-    IO:confirm "Job $(basename "$source_file") already exists. Overwrite?" || return 1
-  fi
-
-  cp "$source_file" "$dest"
-  IO:success "Added job: $(basename "$source_file" .md)"
-}
-
-function do_remove() {
-  local job_name="$1"
-  [[ -z "$job_name" ]] && IO:die "Usage: $script_basename remove <name>"
-
-  local job_file="${JOB_DIR}/${job_name}.md"
-  [[ ! -f "$job_file" ]] && IO:die "Job not found: $job_name"
+  IO:print "Found $count log file(s) older than $DAYS days."
 
   if ! ((FORCE)); then
-    IO:confirm "Remove job '$job_name'?" || return 1
+    IO:confirm "Delete $count file(s)?" || return 1
   fi
 
-  rm -f "$job_file"
-  # Also remove memory file if exists
-  rm -f "${JOB_DIR}/${job_name}.memory.md"
-  # Remove lock if exists
-  release_lock "$job_name"
-  IO:success "Removed job: $job_name"
-}
+  echo "$old_files" | while IFS= read -r f; do
+    [[ -f "$f" ]] && rm -f "$f" && IO:debug "Deleted: $f"
+  done
 
-function do_enable() {
-  local job_name="$1"
-  [[ -z "$job_name" ]] && IO:die "Usage: $script_basename enable <name>"
-
-  local job_file="${JOB_DIR}/${job_name}.md"
-  [[ ! -f "$job_file" ]] && IO:die "Job not found: $job_name"
-
-  if grep -q '^enabled:' "$job_file"; then
-    sed -i.bak 's/^enabled:.*/enabled: true/' "$job_file" && rm -f "${job_file}.bak"
-  else
-    # Add enabled field after cron line
-    sed -i.bak '/^cron:/a\
-enabled: true' "$job_file" && rm -f "${job_file}.bak"
-  fi
-  IO:success "Enabled job: $job_name"
-}
-
-function do_disable() {
-  local job_name="$1"
-  [[ -z "$job_name" ]] && IO:die "Usage: $script_basename disable <name>"
-
-  local job_file="${JOB_DIR}/${job_name}.md"
-  [[ ! -f "$job_file" ]] && IO:die "Job not found: $job_name"
-
-  if grep -q '^enabled:' "$job_file"; then
-    sed -i.bak 's/^enabled:.*/enabled: false/' "$job_file" && rm -f "${job_file}.bak"
-  else
-    sed -i.bak '/^cron:/a\
-enabled: false' "$job_file" && rm -f "${job_file}.bak"
-  fi
-  IO:success "Disabled job: $job_name"
-}
-
-function do_history() {
-  local job_name="$1"
-  local log_base="${LOG_DIR}/jobs"
-
-  if [[ -n "$job_name" ]]; then
-    # Show history for specific job
-    local job_log_dir="${log_base}/${job_name}"
-    if [[ ! -d "$job_log_dir" ]]; then
-      IO:print "No history for job: $job_name"
-      return 0
-    fi
-    IO:print "## History: $job_name"
-    IO:print ""
-    printf "%-20s %-10s %s\n" "Timestamp" "Result" "Duration"
-    printf "%-20s %-10s %s\n" "---------" "------" "--------"
-    for log_file in $(ls -t "$job_log_dir"/*.log 2>/dev/null | head -20); do
-      local timestamp result_line
-      timestamp=$(basename "$log_file" .log | tr '_' ' ')
-      result_line=$(tail -1 "$log_file")
-      local status="unknown" duration=""
-      if [[ "$result_line" == ---EXIT:* ]]; then
-        if [[ "$result_line" == *"EXIT:0"* ]]; then
-          status="OK"
-        elif [[ "$result_line" == *"TIMEOUT"* ]]; then
-          status="TIMEOUT"
-        else
-          status="FAIL"
-        fi
-        duration=$(echo "$result_line" | grep -o 'DURATION:[^ ]*' | cut -d: -f2)
-      fi
-      printf "%-20s %-10s %s\n" "$timestamp" "$status" "${duration:-—}"
-    done
-  else
-    # Show history for all jobs
-    if [[ ! -d "$log_base" ]]; then
-      IO:print "No execution history found"
-      return 0
-    fi
-    IO:print "## Recent executions (last 20)"
-    IO:print ""
-    printf "%-16s %-20s %-10s %s\n" "Job" "Timestamp" "Result" "Duration"
-    printf "%-16s %-20s %-10s %s\n" "---" "---------" "------" "--------"
-    # Find all log files, sort by time, show last 20
-    find "$log_base" -name "*.log" -type f -print0 2>/dev/null |
-      xargs -0 ls -t 2>/dev/null |
-      head -20 |
-      while IFS= read -r log_file; do
-        local jname timestamp result_line
-        jname=$(basename "$(dirname "$log_file")")
-        timestamp=$(basename "$log_file" .log | tr '_' ' ')
-        result_line=$(tail -1 "$log_file")
-        local status="unknown" duration=""
-        if [[ "$result_line" == ---EXIT:* ]]; then
-          if [[ "$result_line" == *"EXIT:0"* ]]; then
-            status="OK"
-          elif [[ "$result_line" == *"TIMEOUT"* ]]; then
-            status="TIMEOUT"
-          else
-            status="FAIL"
-          fi
-          duration=$(echo "$result_line" | grep -o 'DURATION:[^ ]*' | cut -d: -f2)
-        fi
-        printf "%-16s %-20s %-10s %s\n" "$jname" "$timestamp" "$status" "${duration:-—}"
-      done
-  fi
-}
-
-function do_test() {
-  local job_name="$1"
-  [[ -z "$job_name" ]] && IO:die "Usage: $script_basename test <name>"
-
-  local job_file="${JOB_DIR}/${job_name}.md"
-  [[ ! -f "$job_file" ]] && IO:die "Job not found: $job_name"
-
-  parse_frontmatter "$job_file"
-
-  IO:print "## Dry-run: $job_name"
-  IO:print ""
-  IO:print "File      : $job_file"
-  IO:print "Cron      : $JOB_CRON"
-  IO:print "Enabled   : $JOB_ENABLED"
-  IO:print "Timeout   : ${JOB_TIMEOUT}s"
-  IO:print "Singleton : $JOB_SINGLETON"
-  IO:print "Continue  : $JOB_CONTINUE"
-  IO:print "Memory    : $JOB_MEMORY"
-  IO:print "Sandbox   : $JOB_SANDBOX"
-  [[ -n "$JOB_MODEL" ]] && IO:print "Model     : $JOB_MODEL"
-  [[ -n "$JOB_MAX_TURNS" ]] && IO:print "Max turns : $JOB_MAX_TURNS"
-  [[ -n "$JOB_ALLOWEDTOOLS" ]] && IO:print "Tools     : $JOB_ALLOWEDTOOLS"
-  [[ -n "$JOB_WORKDIR" ]] && IO:print "Workdir   : $JOB_WORKDIR"
-  [[ -n "$JOB_NOTIFY_ON_FAILURE" ]] && IO:print "On fail   : $JOB_NOTIFY_ON_FAILURE"
-  [[ -n "$JOB_NOTIFY_ON_SUCCESS" ]] && IO:print "On success: $JOB_NOTIFY_ON_SUCCESS"
-  [[ -n "$JOB_DESCRIPTION" ]] && IO:print "Desc      : $JOB_DESCRIPTION"
-
-  # Check if cron matches NOW
-  local match_result
-  match_result=$(echo "${job_name}|${JOB_CRON}" | awk -v now_min="$(date +%-M)" \
-    -v now_hour="$(date +%-H)" \
-    -v now_dom="$(date +%-d)" \
-    -v now_month="$(date +%-m)" \
-    -v now_dow="$(date +%-u)" \
-    'BEGIN { FS="|"
-    split("MON,TUE,WED,THU,FRI,SAT,SUN", dn, ",")
-    for (i in dn) dow_map[dn[i]] = i
-  }
-  function field_match(pattern, value, fmin, fmax,    parts, i, lo, hi, step, rng, v) {
-    if (pattern == "*") return 1
-    step = 1
-    if (index(pattern, "/")) {
-      split(pattern, parts, "/")
-      step = parts[2] + 0
-      pattern = parts[1]
-    }
-    if (pattern == "*") {
-      return ((value - fmin) % step == 0) ? 1 : 0
-    }
-    split(pattern, parts, ",")
-    for (i in parts) {
-      gsub(/ /, "", parts[i])
-      if (toupper(parts[i]) in dow_map) parts[i] = dow_map[toupper(parts[i])]
-      if (index(parts[i], "-")) {
-        split(parts[i], rng, "-")
-        lo = (toupper(rng[1]) in dow_map) ? dow_map[toupper(rng[1])] : rng[1] + 0
-        hi = (toupper(rng[2]) in dow_map) ? dow_map[toupper(rng[2])] : rng[2] + 0
-        for (v = lo; v <= hi; v += step) {
-          if (v == value) return 1
-        }
-      } else {
-        if (parts[i] + 0 == value) return 1
-      }
-    }
-    return 0
-  }
-  /\|/ {
-    cron = $2
-    split(cron, f, " ")
-    if (field_match(f[1], now_min, 0, 59) &&
-        field_match(f[2], now_hour, 0, 23) &&
-        field_match(f[3], now_dom, 1, 31) &&
-        field_match(f[4], now_month, 1, 12) &&
-        field_match(f[5], now_dow, 1, 7)) {
-      print "MATCH"
-    } else {
-      print "NO_MATCH"
-    }
-  }')
-
-  IO:print ""
-  if [[ "$match_result" == "MATCH" ]]; then
-    IO:success "Cron MATCHES current time ($(date +%H:%M) $(date +%A))"
-  else
-    IO:print "Cron does NOT match current time ($(date +%H:%M) $(date +%A))"
-  fi
-
-  # Show prompt preview
-  IO:print ""
-  IO:print "## Prompt preview (first 10 lines):"
-  extract_prompt "$job_file" | head -10
-
-  # Check memory file
-  if [[ "$JOB_MEMORY" == "true" ]]; then
-    local memory_file="${JOB_DIR}/${job_name}.memory.md"
-    IO:print ""
-    if [[ -f "$memory_file" ]]; then
-      IO:print "Memory file: $memory_file ($(wc -l <"$memory_file") lines)"
-    else
-      IO:print "Memory file: $memory_file (will be created on first run)"
-    fi
-  fi
+  IO:success "Cleaned $count log file(s)."
 }
 
 function do_install() {
-  Os:require "crontab"
-  local script_path
-  script_path="$(cd "$script_install_folder" && pwd)/$script_basename"
+  Os:require "jq"
 
-  local cron_entry="* * * * * $script_path run -Q >> ${LOG_DIR}/cronbot.log 2>&1"
+  local settings_file
+  settings_file=$(get_settings_file)
+  local hooks_dir="$script_install_folder/hooks"
 
-  if crontab -l 2>/dev/null | grep -q "cronbot.*run"; then
-    IO:alert "cronbot already in crontab:"
-    crontab -l 2>/dev/null | grep "cronbot"
-    return 0
+  # Make hook scripts executable
+  chmod +x "$hooks_dir/on-tool-use.sh" 2>/dev/null || true
+  chmod +x "$hooks_dir/on-session.sh" 2>/dev/null || true
+
+  # Build the hooks JSON to merge
+  local hooks_json
+  hooks_json=$(jq -nc '{
+    "PreToolUse": [{"hooks": [{"type": "command", "command": ".claude/tropiclog/hooks/on-tool-use.sh pre"}]}],
+    "PostToolUse": [{"hooks": [{"type": "command", "command": ".claude/tropiclog/hooks/on-tool-use.sh post"}]}],
+    "PostToolUseFailure": [{"hooks": [{"type": "command", "command": ".claude/tropiclog/hooks/on-tool-use.sh failure"}]}],
+    "SessionStart": [{"hooks": [{"type": "command", "command": ".claude/tropiclog/hooks/on-session.sh start"}]}],
+    "SessionEnd": [{"hooks": [{"type": "command", "command": ".claude/tropiclog/hooks/on-session.sh end"}]}]
+  }')
+
+  if [[ -f "$settings_file" ]]; then
+    # Check if hooks already installed
+    if hooks_installed; then
+      IO:alert "Audit log hooks are already installed."
+      return 0
+    fi
+
+    # Deep-merge hooks into existing settings
+    local tmp_file
+    tmp_file=$(mktemp)
+    jq --argjson new_hooks "$hooks_json" '
+      .hooks //= {} |
+      .hooks as $existing |
+      .hooks = ($existing | to_entries | map(
+        .key as $k |
+        if ($new_hooks | has($k)) then
+          .value += $new_hooks[$k]
+        else
+          .
+        end
+      ) | from_entries) + ($new_hooks | to_entries | map(select(.key as $k | $existing | has($k) | not)) | from_entries | {hooks: .} | .hooks) |
+      .hooks = ($existing // {} ) * $new_hooks
+    ' "$settings_file" >"$tmp_file" 2>/dev/null
+
+    # Simpler approach: just combine the hooks arrays
+    jq --argjson new_hooks "$hooks_json" '
+      .hooks //= {} |
+      .hooks |= (. as $existing |
+        ($new_hooks | keys[]) as $event |
+        if $existing[$event] then
+          .[$event] += $new_hooks[$event]
+        else
+          .[$event] = $new_hooks[$event]
+        end
+      )
+    ' "$settings_file" >"$tmp_file" 2>/dev/null
+
+    if [[ -s "$tmp_file" ]]; then
+      mv "$tmp_file" "$settings_file"
+      IO:success "Hooks installed in $settings_file"
+    else
+      rm -f "$tmp_file"
+      IO:die "Failed to merge hooks into settings file"
+    fi
+  else
+    # Create new settings file with just hooks
+    jq -nc --argjson hooks "$hooks_json" '{hooks: $hooks}' >"$settings_file"
+    IO:success "Created $settings_file with audit log hooks"
   fi
 
-  (crontab -l 2>/dev/null; echo "$cron_entry") | crontab -
-  IO:success "Added cronbot to crontab"
-  IO:print "Entry: $cron_entry"
+  # Create log directory
+  mkdir -p "$LOG_DIR"
+  IO:success "Log directory ready: $LOG_DIR"
 }
 
 function do_uninstall() {
-  if ! crontab -l 2>/dev/null | grep -q "cronbot.*run"; then
-    IO:print "cronbot not found in crontab"
+  Os:require "jq"
+
+  local settings_file
+  settings_file=$(get_settings_file)
+
+  if [[ ! -f "$settings_file" ]]; then
+    IO:print "No settings file found — nothing to uninstall."
+    return 0
+  fi
+
+  if ! hooks_installed; then
+    IO:print "Audit log hooks are not installed."
     return 0
   fi
 
   if ! ((FORCE)); then
-    IO:confirm "Remove cronbot from crontab?" || return 1
+    IO:confirm "Remove audit log hooks from settings?" || return 1
   fi
 
-  crontab -l 2>/dev/null | grep -v "cronbot.*run" | crontab -
-  IO:success "Removed cronbot from crontab"
+  # Remove hook entries that reference tropiclog
+  local tmp_file
+  tmp_file=$(mktemp)
+  jq '
+    .hooks //= {} |
+    .hooks |= with_entries(
+      .value |= map(
+        select(
+          (.hooks // []) | all(.command // "" | test("tropiclog") | not)
+        )
+      ) |
+      .value |= if length == 0 then empty else . end
+    ) |
+    if .hooks == {} then del(.hooks) else . end
+  ' "$settings_file" >"$tmp_file" 2>/dev/null
+
+  if [[ -s "$tmp_file" ]]; then
+    mv "$tmp_file" "$settings_file"
+    IO:success "Audit log hooks removed from $settings_file"
+  else
+    rm -f "$tmp_file"
+    IO:die "Failed to update settings file"
+  fi
+}
+
+function do_check() {
+  IO:print "## Audit Log Health Check"
+  IO:print ""
+
+  local all_ok=1
+
+  # Check jq
+  if command -v jq &>/dev/null; then
+    IO:success "jq is installed ($(jq --version 2>/dev/null || echo '?'))"
+  else
+    IO:alert "jq is NOT installed — hooks will use fallback mode, CLI features limited"
+    all_ok=0
+  fi
+
+  # Check hook scripts
+  local hooks_dir="$script_install_folder/hooks"
+  for hook_script in on-tool-use.sh on-session.sh; do
+    if [[ -x "$hooks_dir/$hook_script" ]]; then
+      IO:success "Hook script: $hook_script (executable)"
+    elif [[ -f "$hooks_dir/$hook_script" ]]; then
+      IO:alert "Hook script: $hook_script (exists but NOT executable)"
+      all_ok=0
+    else
+      IO:alert "Hook script: $hook_script (MISSING)"
+      all_ok=0
+    fi
+  done
+
+  # Check hook registration
+  if hooks_installed; then
+    IO:success "Hooks are registered in settings"
+  else
+    IO:alert "Hooks are NOT registered (run: $script_basename install)"
+    all_ok=0
+  fi
+
+  # Check log directory
+  local session_dir
+  session_dir=$(get_session_dir)
+  if [[ -d "$session_dir" ]]; then
+    if [[ -w "$session_dir" ]]; then
+      IO:success "Log directory: $session_dir (writable)"
+    else
+      IO:alert "Log directory: $session_dir (NOT writable)"
+      all_ok=0
+    fi
+  else
+    IO:alert "Log directory: $session_dir (does not exist — will be created on first hook)"
+    # Not a failure, it'll be created
+  fi
+
+  IO:print ""
+  if [[ $all_ok -eq 1 ]]; then
+    IO:success "All checks passed"
+  else
+    IO:alert "Some checks failed — see above"
+  fi
 }
 
 #####################################################################
@@ -1512,19 +1537,18 @@ function Os:folder() {
 function Os:follow_link() {
   [[ ! -L "$1" ]] && echo "$1" && return 0 ## if it's not a symbolic link, return immediately
   local file_folder link_folder link_name symlink
-  file_folder="$(dirname "$1")"                                                                                   ## check if file has absolute/relative/no path
-  [[ "$file_folder" != /* ]] && file_folder="$(cd -P "$file_folder" &>/dev/null && pwd)"                          ## a relative path was given, resolve it
-  symlink=$(readlink "$1")                                                                                        ## follow the link
-  link_folder=$(dirname "$symlink")                                                                               ## check if link has absolute/relative/no path
-  [[ -z "$link_folder" ]] && link_folder="$file_folder"                                                           ## if no link path, stay in same folder
-  [[ "$link_folder" == \.* ]] && link_folder="$(cd -P "$file_folder" && cd -P "$link_folder" &>/dev/null && pwd)" ## a relative link path was given, resolve it
+  file_folder="$(dirname "$1")"
+  [[ "$file_folder" != /* ]] && file_folder="$(cd -P "$file_folder" &>/dev/null && pwd)"
+  symlink=$(readlink "$1")
+  link_folder=$(dirname "$symlink")
+  [[ -z "$link_folder" ]] && link_folder="$file_folder"
+  [[ "$link_folder" == \.* ]] && link_folder="$(cd -P "$file_folder" && cd -P "$link_folder" &>/dev/null && pwd)"
   link_name=$(basename "$symlink")
   IO:debug "$info_icon Symbolic ln: $1 -> [$link_folder/$link_name]"
   Os:follow_link "$link_folder/$link_name" ## recurse
 }
 
 function Os:notify() {
-  # cf https://levelup.gitconnected.com/5-modern-bash-scripting-techniques-that-only-a-few-programmers-know-4abb58ddadad
   local message="$1"
   local source="${2:-$script_basename}"
 
@@ -1598,11 +1622,9 @@ function Script:meta() {
     ;;
   Linux | GNU*)
     if [[ $(command -v lsb_release) ]]; then
-      # 'normal' Linux distributions
-      os_name=$(lsb_release -i | awk -F: '{$1=""; gsub(/^[\s\t]+/,"",$2); gsub(/[\s\t]+$/,"",$2); print $2}')    # Ubuntu/Raspbian
-      os_version=$(lsb_release -r | awk -F: '{$1=""; gsub(/^[\s\t]+/,"",$2); gsub(/[\s\t]+$/,"",$2); print $2}') # 20.04
+      os_name=$(lsb_release -i | awk -F: '{$1=""; gsub(/^[\s\t]+/,"",$2); gsub(/[\s\t]+$/,"",$2); print $2}')
+      os_version=$(lsb_release -r | awk -F: '{$1=""; gsub(/^[\s\t]+/,"",$2); gsub(/[\s\t]+$/,"",$2); print $2}')
     else
-      # Synology, QNAP,
       os_name="Linux"
     fi
     [[ -x /bin/apt-cyg ]] && install_package="apt-cyg install"     # Cygwin
@@ -1632,7 +1654,7 @@ function Script:meta() {
   IO:debug "$info_icon Modified : $script_modified"
 
   IO:debug "$info_icon Lines    : $script_lines lines / md5: $script_hash"
-  IO:debug "$info_icon User     : $USER@$HOSTNAME"
+  IO:debug "$info_icon User     : ${USER:-$(whoami)}@${HOSTNAME:-$(hostname 2>/dev/null || echo unknown)}"
 
   # if run inside a git repo, detect for which remote repo it is
   if git status &>/dev/null; then
@@ -1730,8 +1752,8 @@ function Os:clean_env() {
 IO:initialize # output settings
 Script:meta   # find installation folder
 
-[[ $run_as_root == 1 ]] && [[ $UID -ne 0 ]] && IO:die "user is $USER, MUST be root to run [$script_basename]"
-[[ $run_as_root == -1 ]] && [[ $UID -eq 0 ]] && IO:die "user is $USER, CANNOT be root to run [$script_basename]"
+[[ $run_as_root == 1 ]] && [[ ${UID:-0} -ne 0 ]] && IO:die "user is ${USER:-$(whoami)}, MUST be root to run [$script_basename]"
+[[ $run_as_root == -1 ]] && [[ ${UID:-0} -eq 0 ]] && IO:die "user is ${USER:-$(whoami)}, CANNOT be root to run [$script_basename]"
 
 Option:initialize # set default values for flags & options
 Os:import_env     # load .env, .<prefix>.env, <prefix>.env (script folder + cwd)
