@@ -4,11 +4,28 @@
 
 OpenClaw provides a rich set of tools and an installable skill package system:
 
-- **Built-in tools**: Shell execution, browser automation, canvas rendering, messaging, camera, location
+- **Built-in tools**: Shell execution, browser automation, canvas rendering, file I/O, messaging, camera, location, memory search
 - **Skill packages**: Installable, versioned skill bundles
 - **Per-agent allow/deny lists**: Fine-grained control over which agent can use which tools
 - **Tool discovery**: Agents can discover available tools at runtime
 - **Sandboxed execution**: Tools run in isolated environments
+
+### Shell Execution (exec) — Three Modes
+
+The `exec` tool is the most powerful and most dangerous. Three isolation modes:
+
+| Mode | Isolation | How it works |
+|------|-----------|-------------|
+| **sandbox** | High | Runs inside a Docker container, isolated from host system |
+| **gateway** | Medium | Runs on host but with command whitelist defined in `exec-approvals.json` |
+| **full** | None | Unrestricted shell access — fine for experimenting, not for production |
+
+### Browser Tool — Two Profiles
+
+| Profile | Behavior |
+|---------|----------|
+| **openclaw** | Fully isolated browser instance — no access to user data |
+| **chrome** | Controls user's regular Chrome browser via extension — inherits cookies, sessions, auth |
 
 ### Browser Automation in OpenClaw
 
@@ -102,7 +119,7 @@ This is the closest Claude Code equivalent to OpenClaw's zero-config `browser.ac
 | No canvas/live HTML rendering | MEDIUM  | No equivalent to OpenClaw's `canvas.eval` — see [Web App Generation](08-web-app-generation.md) for detailed analysis |
 | No camera/photo tools        | LOW      | Not typical for CLI agents; could add via MCP                                 |
 | No GPS/location tools        | LOW      | Could integrate via MCP with device APIs                                      |
-| No sandboxed shell isolation | MEDIUM   | Bash runs in user's environment; no container isolation                       |
+| No sandboxed shell isolation | MEDIUM   | Bash runs in user's environment; no container isolation. OpenClaw has three exec modes: sandbox (Docker), gateway (whitelist via `exec-approvals.json`), full (unrestricted) |
 | No tool versioning           | LOW      | Skills don't have version management                                          |
 | No tool marketplace/registry | LOW      | No centralized discovery beyond MCP registry                                  |
 

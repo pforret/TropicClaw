@@ -2,7 +2,39 @@
 
 ## OpenClaw Feature
 
-OpenClaw's memory system provides persistent, searchable context:
+OpenClaw's memory system provides persistent, searchable context with a **two-level architecture**:
+
+### Level 1: Bootstrap (Injected Every Time)
+
+Every time the agent runs, Gateway reads these workspace files and injects them into context **before** the LLM sees the user's message:
+
+| File | Purpose |
+|------|---------|
+| `AGENTS.md` | Operating manual — how to think, when to use which tool, safety rules |
+| `SOUL.md` | Personality — tone, boundaries, priorities |
+| `USER.md` | User profile — name, preferences, context |
+| `IDENTITY.md` | Name, creature type, vibe, emoji |
+| `YYYY-MM-DD.md` | Today's daily log — tasks in progress, what was discussed |
+
+**Trade-off**: Bootstrap files eat tokens on every single request. The more content in bootstrap, the more expensive each call.
+
+### Level 2: Semantic Search (On-Demand)
+
+When the memory plugin is enabled, the agent searches `MEMORY.md` and other notes via a vector index — finds relevant chunks by meaning, not keywords. Only pulls what's relevant to the current query; doesn't burn context constantly.
+
+**Strategy**: Put critical stuff in bootstrap (tone, rules, who you are). Everything else goes into `MEMORY.md` and daily logs for semantic retrieval.
+
+### Storage Format
+
+Everything is **text files** — `.md` and `.json`, no database:
+
+- **Session history**: `.jsonl` per conversation (append-only)
+- **Session index**: `sessions.json`
+- **Workspace files**: `.md` files (AGENTS.md, SOUL.md, etc.)
+- **Long-term memory**: `MEMORY.md` — facts the agent writes on its own or when instructed
+- **Daily logs**: `YYYY-MM-DD.md` — what happened today, carried into tomorrow
+
+### Full Feature List
 
 - **Vector embeddings** for semantic similarity search
 - **Hybrid search**: BM25 (keyword) + vector similarity, combined scoring
@@ -10,6 +42,10 @@ OpenClaw's memory system provides persistent, searchable context:
 - **Conversation indexing**: Past conversations are indexed and retrievable
 - **Memory lifecycle**: Create, update, expire, delete memories
 - **Contextual injection**: Relevant memories automatically included in agent prompts
+
+### Compaction Risk
+
+Long dialogues grow into thousands of tokens. If the agent didn't write important decisions to `MEMORY.md` **before** compression/compaction, they're gone permanently. Fix: enable memory flush before compaction.
 
 ## Claude Code Coverage
 
@@ -44,6 +80,8 @@ OpenClaw's memory system provides persistent, searchable context:
 | No conversation indexing          | MEDIUM   | Past sessions not searchable                      |
 | No memory expiry/lifecycle        | LOW      | Memories persist until manually deleted           |
 | No automatic contextual injection | MEDIUM   | Must manually reference memory files              |
+| No compaction-safe memory flush   | MEDIUM   | Claude Code auto-compresses long sessions; no mechanism to flush important context to persistent storage before compression |
+| No daily log convention           | LOW      | No equivalent to OpenClaw's `YYYY-MM-DD.md` daily context files |
 
 ## Build Recommendations
 

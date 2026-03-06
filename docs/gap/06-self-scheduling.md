@@ -13,6 +13,33 @@ OpenClaw's agent can **inspect, create, modify, and delete its own scheduled job
 - **Job persistence** — schedules survive restarts; stored in a durable store (DB, file, or config)
 - **Per-agent scoping** — each agent/persona manages its own schedule independently
 - **Job payloads** — each scheduled job carries a prompt or action to execute when triggered
+- **Delivery control** — `--announce` sends results to the channel; `--no-deliver` runs quietly
+
+### CLI Syntax
+
+```bash
+openclaw cron add --schedule "0 9 * * *" --agent personal \
+  --prompt "Check new emails, send summary to Telegram" --announce
+```
+
+### Heartbeat
+
+**Heartbeat** is a special short-cycle periodic check against `HEARTBEAT.md` — a checklist of things to verify:
+
+- Is monitoring running?
+- Is disk space okay?
+- Any errors in the logs?
+
+If something is wrong, the agent messages you proactively.
+
+### Integration Example
+
+Want Gmail checked every morning with a summary sent to Telegram:
+1. Enable browser tool (with saved session for Gmail auth)
+2. Set 9:00 cron with `--announce`
+3. Write the instruction in `AGENTS.md`
+4. Every morning: agent opens browser → reads inbox → filters by relevant senders → sends summary
+5. You haven't finished your coffee and it's already handled
 
 ### Example Scenarios
 

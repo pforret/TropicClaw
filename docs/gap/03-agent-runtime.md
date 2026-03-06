@@ -5,11 +5,43 @@
 The Agent Runtime manages conversation state and agent execution:
 
 - **Multi-turn conversations** with context preservation
-- **Append-only session logs** for auditability
+- **Append-only session logs** for auditability (`.jsonl` per session, `sessions.json` index)
 - **Dynamic system prompts** that adapt based on context, channel, user
 - **Multi-agent orchestration** — separate personas with distinct tools, running simultaneously
 - **Agent-per-channel routing** — different agents handle different channels
 - **Tool execution sandboxing** — agents can only use their allowed tools
+- **Tool chaining loop** — agent calls a tool → gets result → thinks → calls another → loop until final answer
+
+### Multi-Agent Architecture
+
+Each agent is a **separate folder** in `~/.openclaw/agents/`:
+
+```
+~/.openclaw/agents/
+  work/         ← knows your stack and project
+    workspace/  ← its own AGENTS.md, SOUL.md, USER.md, MEMORY.md
+    sessions/   ← its own conversation history
+  personal/     ← knows your habits and schedule
+    workspace/
+    sessions/
+  monitor/      ← watches servers via heartbeat
+    workspace/
+    sessions/
+```
+
+**Channel mapping** lives in `config.json` — write to one Telegram chat, it goes to the work agent; write to another, it goes to personal. Same Gateway, routing by rules.
+
+### Session Isolation (dmScope)
+
+`dmScope` controls how conversations are isolated:
+
+| Setting | Behavior | Use case |
+|---------|----------|----------|
+| `"main"` | All DMs in a channel collapse into one session | Single-user, single-channel (default — **dangerous with multiple users**) |
+| `"per-agent"` | Each agent sees only its own dialogues | Multi-agent setups where agents shouldn't cross-read |
+| `"per-channel-peer"` | Each user gets their own session per channel | **Required** when multiple people access the same agent |
+
+**Critical mistake**: `dmScope: "main"` with multiple users means the agent responds to one person with information from another's conversation. This is the default and must be changed manually.
 
 ## Claude Code Coverage
 
@@ -36,8 +68,9 @@ The Agent Runtime manages conversation state and agent execution:
 | Gap                                | Severity | Notes                                                             |
 |------------------------------------|----------|-------------------------------------------------------------------|
 | No append-only session logs        | ~~MEDIUM~~ → **ADDRESSED** | Addressed by `auditlog.sh` — hook-based JSON-lines logging |
-| No multi-agent orchestration       | HIGH     | Cannot run multiple agents simultaneously with different personas |
-| No agent-per-channel routing       | HIGH     | No mechanism to route messages from channel X to agent Y          |
+| No multi-agent orchestration       | HIGH     | Cannot run multiple agents simultaneously with different personas. OpenClaw: separate agent folders in `~/.openclaw/agents/`, each with own workspace/sessions/memory |
+| No agent-per-channel routing       | HIGH     | No mechanism to route messages from channel X to agent Y. OpenClaw: `config.json` channel mapping |
+| No session isolation (dmScope)     | HIGH     | No equivalent to `dmScope` for per-user session isolation. Without it, multi-user agents leak context between users |
 | No dynamic system prompt switching | MEDIUM   | `CLAUDE.md` is static within a session                            |
 | No agent registry                  | MEDIUM   | No way to define, list, and manage multiple agent configurations  |
 | No conversation indexing           | ~~LOW~~ → **PARTIAL** | Keyword search via `auditlog search`; semantic search still requires Memory MCP |
