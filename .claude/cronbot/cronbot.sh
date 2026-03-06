@@ -24,6 +24,13 @@
 ###   workdir: /path              (optional)
 ###   notify_on_failure: "cmd"    (optional)
 ###   notify_on_success: "cmd"    (optional)
+###   precheck: "bash command"    (optional — run before LLM; skip if exit 0 + no stdout)
+###
+### PRECHECK: The precheck field runs a bash command before invoking Claude.
+###   If the command exits 0 with empty stdout, the job is skipped (no tokens).
+###   If it exits non-zero or produces stdout, the output is prepended to the
+###   prompt as "## Precheck output" so the LLM can act on it.
+###   Helper: url-changed.sh <url> — fetches URL, caches, outputs diff on change.
 ### ==============================================================================
 
 ### Created by Peter Forret ( pforret ) on 2026-02-26
