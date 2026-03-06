@@ -56,8 +56,9 @@ Want Gmail checked every morning with a summary sent to Telegram:
 
 | Feature                         | Status  | Claude Code Primitive                                |
 |---------------------------------|---------|------------------------------------------------------|
-| Run a prompt on schedule        | No      | — (no built-in scheduler)                            |
+| Run a prompt on schedule        | Partial | Cronbot (`.claude/cronbot/`) — bash-based job scheduler with cron matching |
 | External cron invocation        | Partial | OS cron/launchd + `claude -p "prompt"`               |
+| Token-efficient health checks   | Yes     | Cronbot `precheck:` field — bash pre-check skips LLM if exit 0 + no output |
 | Agent reads its own schedule    | No      | —                                                    |
 | Agent modifies its own schedule | No      | —                                                    |
 | Job persistence                 | No      | —                                                    |
@@ -73,12 +74,13 @@ Want Gmail checked every morning with a summary sent to Telegram:
 
 | Gap                      | Severity | Notes                                                                       |
 |--------------------------|----------|-----------------------------------------------------------------------------|
-| No scheduler process     | HIGH     | Claude Code is stateless between sessions; nothing runs between invocations |
-| No schedule store        | HIGH     | No built-in place to persist job definitions                                |
-| No self-modification API | HIGH     | Agent cannot programmatically add/remove/edit cron entries                  |
-| No job execution loop    | HIGH     | Nothing polls the schedule and fires jobs                                   |
-| No job status/history    | MEDIUM   | No record of past executions, successes, failures                           |
+| No scheduler process     | ~~HIGH~~ → **ADDRESSED** | Cronbot provides bash-based cron matching + job execution via `cronbot.sh run` |
+| No schedule store        | ~~HIGH~~ → **ADDRESSED** | Job definitions stored as `.md` files with YAML frontmatter in `.claude/cronbot/jobs/` |
+| No self-modification API | MEDIUM   | Agent can write/edit job `.md` files directly, but no dedicated tool API    |
+| No job execution loop    | ~~HIGH~~ → **ADDRESSED** | Cronbot runs every minute via OS crontab, matches jobs, launches `claude -p` |
+| No job status/history    | ~~MEDIUM~~ → **ADDRESSED** | Per-job log files in `logs/jobs/<name>/`, `cronbot.sh list` shows last run |
 | No retry/backoff         | LOW      | Failed jobs aren't automatically retried                                    |
+| No token-efficient checks | ~~MEDIUM~~ → **ADDRESSED** | `precheck:` frontmatter runs bash first; skips LLM if all-clear (exit 0, no stdout) |
 
 ## Build Recommendations
 
@@ -118,4 +120,4 @@ The agent writes schedule definitions to a JSON/YAML file. An external watcher p
 
 ## Verdict
 
-**RED** — Claude Code has no scheduling primitives. The agent cannot create, inspect, or modify recurring jobs. A dedicated scheduler component (ideally an MCP server) must be built to bridge this gap.
+**YELLOW** — Cronbot addresses the core scheduling gaps: job storage (`.md` files), cron matching (bash/awk), job execution (`claude -p`), history/logs, and token-efficient prechecks. The remaining gaps are: no dedicated tool API for self-modification (agent must write files directly), no retry/backoff, and no natural-language schedule parsing. An MCP server wrapping cronbot would close these remaining gaps.

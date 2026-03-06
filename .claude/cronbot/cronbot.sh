@@ -152,6 +152,7 @@ function parse_frontmatter() {
   JOB_SANDBOX="false"
   JOB_NOTIFY_ON_FAILURE=""
   JOB_NOTIFY_ON_SUCCESS=""
+  JOB_PRECHECK=""
 
   while IFS= read -r line; do
     if [[ "$line" == "---" ]]; then
@@ -448,6 +449,22 @@ function do_run() {
       continue
     fi
 
+    # Precheck: run bash command, skip LLM if exit 0 and no stdout
+    if [[ -n "$JOB_PRECHECK" ]]; then
+      local precheck_output
+      local precheck_exit
+      precheck_output=$(cd "${JOB_WORKDIR:-$script_install_folder}" && eval "$JOB_PRECHECK" 2>&1) || true
+      precheck_exit=$?
+      if [[ $precheck_exit -eq 0 ]] && [[ -z "$precheck_output" ]]; then
+        IO:debug "Precheck passed clean for $job_name — skipping LLM call"
+        release_lock "$job_name"
+        continue
+      fi
+      # Precheck produced output or failed — prepend to prompt so LLM sees it
+      IO:log "Precheck for $job_name triggered (exit=$precheck_exit, output=${#precheck_output} bytes)"
+      JOB_APPEND_PROMPT="## Precheck output (exit code: $precheck_exit)"$'\n\n'"$precheck_output"$'\n\n'"${JOB_APPEND_PROMPT}"
+    fi
+
     execute_job "$job_file"
     IO:log "Launched job: $job_name"
   done <<<"$matching_jobs"
@@ -497,7 +514,9 @@ function do_list() {
       fi
     fi
 
-    printf "%-20s %-18s %-8s %-22s %s\n" "$job_name" "$JOB_CRON" "$enabled_mark" "$last_run" "$JOB_DESCRIPTION"
+    local desc="$JOB_DESCRIPTION"
+    [[ -n "$JOB_PRECHECK" ]] && desc="[precheck] $desc"
+    printf "%-20s %-18s %-8s %-22s %s\n" "$job_name" "$JOB_CRON" "$enabled_mark" "$last_run" "$desc"
   done
 
   if [[ $has_jobs -eq 0 ]]; then
