@@ -30,7 +30,9 @@
 ###   If the command exits 0 with empty stdout, the job is skipped (no tokens).
 ###   If it exits non-zero or produces stdout, the output is prepended to the
 ###   prompt as "## Precheck output" so the LLM can act on it.
-###   Helper: url-changed.sh <url> — fetches URL, caches, outputs diff on change.
+###   Helpers:
+###     url-changed.sh <url>        — fetch URL, cache, output diff on change
+###     cli-changed.sh <name> <cmd> — run any CLI, cache, output new lines only
 ### ==============================================================================
 
 ### Created by Peter Forret ( pforret ) on 2026-02-26
