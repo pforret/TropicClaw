@@ -161,6 +161,36 @@ export class SessionStore {
       .all(limit) as any[];
   }
 
+  getLlmStats(): {
+    calls_1h: number;
+    calls_24h: number;
+    chars_1h: number;
+    chars_24h: number;
+    avg_latency_1h: number | null;
+    avg_latency_24h: number | null;
+  } {
+    const row = this.db.query(`
+      SELECT
+        SUM(CASE WHEN ts >= datetime('now', '-1 hour') THEN 1 ELSE 0 END) as calls_1h,
+        COUNT(*) as calls_24h,
+        SUM(CASE WHEN ts >= datetime('now', '-1 hour') THEN LENGTH(text) ELSE 0 END) as chars_1h,
+        SUM(LENGTH(text)) as chars_24h,
+        AVG(CASE WHEN ts >= datetime('now', '-1 hour') THEN latency_ms END) as avg_latency_1h,
+        AVG(latency_ms) as avg_latency_24h
+      FROM messages
+      WHERE role = 'assistant'
+        AND ts >= datetime('now', '-24 hours')
+    `).get() as any;
+    return {
+      calls_1h: row?.calls_1h ?? 0,
+      calls_24h: row?.calls_24h ?? 0,
+      chars_1h: row?.chars_1h ?? 0,
+      chars_24h: row?.chars_24h ?? 0,
+      avg_latency_1h: row?.avg_latency_1h ? Math.round(row.avg_latency_1h) : null,
+      avg_latency_24h: row?.avg_latency_24h ? Math.round(row.avg_latency_24h) : null,
+    };
+  }
+
   close() {
     this.db.close();
   }

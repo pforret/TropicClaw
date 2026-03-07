@@ -436,6 +436,36 @@ export function registerWebRoutes(app: FastifyInstance, sessionStore: SessionSto
 
   app.get("/web/activity", async (_req, reply) => {
     const activity = sessionStore.getRecentActivity(100);
+    const stats = sessionStore.getLlmStats();
+
+    const estimateTokens = (chars: number) => Math.round(chars / 4);
+    const statsHtml = `
+      <div style="display:flex;gap:2rem;flex-wrap:wrap;margin-bottom:1.5rem;">
+        <div class="stat-card">
+          <div class="stat-label">LLM calls (1h)</div>
+          <div class="stat-value">${stats.calls_1h}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">LLM calls (24h)</div>
+          <div class="stat-value">${stats.calls_24h}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">~Tokens out (1h)</div>
+          <div class="stat-value">${estimateTokens(stats.chars_1h).toLocaleString()}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">~Tokens out (24h)</div>
+          <div class="stat-value">${estimateTokens(stats.chars_24h).toLocaleString()}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Avg latency (1h)</div>
+          <div class="stat-value">${stats.avg_latency_1h ? (stats.avg_latency_1h / 1000).toFixed(2) + ' sec' : '—'}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Avg latency (24h)</div>
+          <div class="stat-value">${stats.avg_latency_24h ? (stats.avg_latency_24h / 1000).toFixed(2) + ' sec' : '—'}</div>
+        </div>
+      </div>`;
 
     const rows = activity
       .map((m) => {
@@ -535,6 +565,7 @@ export function registerWebRoutes(app: FastifyInstance, sessionStore: SessionSto
       layout(
         "Activity",
         `<h1>Recent Activity <span id="auto-status" class="muted" style="font-size:0.7rem; font-weight:400; margin-left:1rem;"></span></h1>
+        ${statsHtml}
         <table class="activity">
           <thead><tr><th>Time</th><th>Agent</th><th>Role</th><th>Channel</th><th>Source</th><th>Message</th><th>Latency</th></tr></thead>
           <tbody id="activity-body">${rows || "<tr class='empty-row'><td colspan=7 class='muted'>No activity yet</td></tr>"}</tbody>
@@ -547,9 +578,17 @@ export function registerWebRoutes(app: FastifyInstance, sessionStore: SessionSto
   app.get("/web/schedule", async (_req, reply) => {
     const jobs = loadTropicronJobs();
 
-    const rows = jobs
+    const sorted = [...jobs].sort((a, b) => {
+      if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    const rows = sorted
       .map((j) => {
         const statusClass = j.enabled ? "" : "muted";
+        const typeCol = j.run
+          ? `<span class="badge badge-off">shell</span>`
+          : `<code>${esc(j.model)}</code>`;
         return `
         <tr class="${statusClass}">
           <td><code>${esc(j.name)}</code></td>
@@ -557,7 +596,7 @@ export function registerWebRoutes(app: FastifyInstance, sessionStore: SessionSto
           <td>${j.enabled ? '<span class="badge badge-ok">enabled</span>' : '<span class="badge badge-off">disabled</span>'}</td>
           <td>${esc(j.agent)}</td>
           <td>${esc(j.description)}</td>
-          <td><code>${esc(j.model)}</code></td>
+          <td>${typeCol}</td>
           <td>${j.timeout}s</td>
         </tr>`;
       })
@@ -568,7 +607,7 @@ export function registerWebRoutes(app: FastifyInstance, sessionStore: SessionSto
         "Schedule",
         `<h1>Scheduled Jobs (Tropicron)</h1>
         <table>
-          <thead><tr><th>Job</th><th>Cron</th><th>Status</th><th>Agent</th><th>Description</th><th>Model</th><th>Timeout</th></tr></thead>
+          <thead><tr><th>Job</th><th>Cron</th><th>Status</th><th>Agent</th><th>Description</th><th>Type</th><th>Timeout</th></tr></thead>
           <tbody>${rows || "<tr><td colspan=7 class='muted'>No jobs found</td></tr>"}</tbody>
         </table>
         <p class="muted">Jobs directory: <code>${esc(JOBS_DIR)}</code></p>`
@@ -585,6 +624,7 @@ interface TropicronJob {
   description: string;
   model: string;
   timeout: number;
+  run: string;
 }
 
 function loadTropicronJobs(): TropicronJob[] {
@@ -605,6 +645,7 @@ function loadTropicronJobs(): TropicronJob[] {
       description: frontmatter.description || "",
       model: frontmatter.model || "sonnet",
       timeout: frontmatter.timeout || 300,
+      run: frontmatter.run || "",
     };
   });
 }
@@ -757,6 +798,12 @@ function layout(title: string, body: string): string {
     dd { font-weight: 500; }
     ul { padding-left: 1.5rem; font-size: 0.85rem; }
     li { margin: 0.25rem 0; }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 0.75rem 1rem; min-width: 120px; text-align: center;
+    }
+    .stat-label { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem; }
+    .stat-value { font-size: 1.4rem; font-weight: 700; color: var(--accent); }
     .msg-text { max-width: 500px; word-break: break-word; }
     .role-user td:nth-child(2) { color: var(--accent); }
     .role-assistant td:nth-child(2) { color: var(--green); }

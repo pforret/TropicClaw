@@ -25,6 +25,7 @@
 ###   notify_on_failure: "cmd"    (optional)
 ###   notify_on_success: "cmd"    (optional)
 ###   precheck: "bash command"    (optional — run before LLM; skip if exit 0 + no stdout)
+###   run: "bash command"          (optional — run shell command directly, no LLM invocation)
 ###
 ### PRECHECK: The precheck field runs a bash command before invoking Claude.
 ###   If the command exits 0 with empty stdout, the job is skipped (no tokens).
@@ -162,6 +163,7 @@ function parse_frontmatter() {
   JOB_NOTIFY_ON_FAILURE=""
   JOB_NOTIFY_ON_SUCCESS=""
   JOB_PRECHECK=""
+  JOB_RUN=""
 
   while IFS= read -r line; do
     if [[ "$line" == "---" ]]; then
@@ -331,6 +333,23 @@ function execute_job() {
   local job_file="$1"
   local job_name
   job_name=$(basename "$job_file" .md)
+
+  # If run: is set, execute shell command directly (no LLM)
+  if [[ -n "$JOB_RUN" ]]; then
+    local job_log_dir="${LOG_DIR}/jobs/${job_name}"
+    [[ ! -d "$job_log_dir" ]] && mkdir -p "$job_log_dir"
+    local log_file="${job_log_dir}/$(date +%Y-%m-%d_%H%M).log"
+    local workdir="${JOB_WORKDIR:-$script_install_folder}"
+    IO:log "Executing shell job: $job_name"
+    (
+      cd "$workdir" || exit 1
+      eval "$JOB_RUN" >"$log_file" 2>&1
+      local exit_code=$?
+      echo "---EXIT:${exit_code}---" >>"$log_file"
+      release_lock "$job_name"
+    ) &
+    return
+  fi
 
   # Build prompt: memory (optional) + job body
   local prompt=""
@@ -524,6 +543,7 @@ function do_list() {
     fi
 
     local desc="$JOB_DESCRIPTION"
+    [[ -n "$JOB_RUN" ]] && desc="[shell] $desc"
     [[ -n "$JOB_PRECHECK" ]] && desc="[precheck] $desc"
     printf "%-20s %-18s %-8s %-22s %s\n" "$job_name" "$JOB_CRON" "$enabled_mark" "$last_run" "$desc"
   done
@@ -698,6 +718,7 @@ function do_test() {
   [[ -n "$JOB_WORKDIR" ]] && IO:print "Workdir   : $JOB_WORKDIR"
   [[ -n "$JOB_NOTIFY_ON_FAILURE" ]] && IO:print "On fail   : $JOB_NOTIFY_ON_FAILURE"
   [[ -n "$JOB_NOTIFY_ON_SUCCESS" ]] && IO:print "On success: $JOB_NOTIFY_ON_SUCCESS"
+  [[ -n "$JOB_RUN" ]] && IO:print "Run       : $JOB_RUN (no LLM)"
   [[ -n "$JOB_DESCRIPTION" ]] && IO:print "Desc      : $JOB_DESCRIPTION"
 
   # Check if cron matches NOW

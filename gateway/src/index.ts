@@ -9,6 +9,7 @@ import { HttpAdapter } from "./adapters/http.js";
 import { TelegramAdapter } from "./adapters/telegram.js";
 import { discoverAgents } from "./agents.js";
 import { registerWebRoutes, buildChannelInfo } from "./web.js";
+import { checkSchedulerPing } from "./adapters/http.js";
 
 // Strip CLAUDECODE env var so spawned claude processes don't detect nesting
 if (process.env.CLAUDECODE) {
@@ -90,6 +91,16 @@ async function start() {
     await telegramAdapter.start();
     const tgInfo = channelInfos.find((c) => c.name === "telegram");
     if (tgInfo) tgInfo.running = true;
+  }
+
+  // Check scheduler heartbeat
+  const ping = checkSchedulerPing();
+  if (!ping.ok) {
+    if (ping.lastPing === null) {
+      console.warn("[gateway] Scheduler ping file not found — tropicron may not be running");
+    } else {
+      console.warn(`[gateway] Scheduler last ping ${ping.ageSeconds}s ago (>600s) — tropicron may be down`);
+    }
   }
 
   console.log("[gateway] Gateway ready.");

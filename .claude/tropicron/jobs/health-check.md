@@ -1,6 +1,6 @@
 ---
-cron: "*/30 * * * *"
-enabled: true
+cron: "0 * * * *"
+enabled: false
 timeout: 60
 description: "Simple health check — verify tropicron is working"
 sandbox: true

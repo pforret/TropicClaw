@@ -1,8 +1,21 @@
+import { existsSync, readFileSync } from "fs";
+import path from "path";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { ChannelAdapter, UnifiedMessage, OutboundResponse } from "../types.js";
 import { formatResponse, formatForChannel } from "../format.js";
 import type { SessionStore } from "../session-store.js";
 import { discoverAgents } from "../agents.js";
+
+const SCHEDULER_PING_PATH = path.resolve(import.meta.dir, "..", "..", "data", "scheduler-ping.txt");
+const SCHEDULER_STALE_SECONDS = 600; // 10 minutes
+
+export function checkSchedulerPing(): { ok: boolean; lastPing: number | null; ageSeconds: number | null } {
+  if (!existsSync(SCHEDULER_PING_PATH)) return { ok: false, lastPing: null, ageSeconds: null };
+  const ts = parseInt(readFileSync(SCHEDULER_PING_PATH, "utf-8").trim(), 10);
+  if (isNaN(ts)) return { ok: false, lastPing: null, ageSeconds: null };
+  const age = Math.floor(Date.now() / 1000) - ts;
+  return { ok: age < SCHEDULER_STALE_SECONDS, lastPing: ts, ageSeconds: age };
+}
 
 export class HttpAdapter implements ChannelAdapter {
   readonly name = "http" as const;
@@ -73,11 +86,18 @@ export class HttpAdapter implements ChannelAdapter {
     });
 
     // GET /health
-    this.app.get("/health", async () => ({
-      status: "ok",
-      uptime: process.uptime(),
-      activeSessions: this.sessionStore?.activeCount() ?? 0,
-    }));
+    this.app.get("/health", async () => {
+      const scheduler = checkSchedulerPing();
+      return {
+        status: "ok",
+        uptime: process.uptime(),
+        activeSessions: this.sessionStore?.activeCount() ?? 0,
+        scheduler: {
+          ok: scheduler.ok,
+          lastPingAge: scheduler.ageSeconds,
+        },
+      };
+    });
 
     // GET /api/sessions
     this.app.get("/api/sessions", async () => {
