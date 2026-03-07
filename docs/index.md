@@ -31,7 +31,7 @@ Subsystem-by-subsystem comparison of OpenClaw vs Claude Code. Each page covers w
 | 5 | [Memory](gap/05-memory.md)                         | 🟡 **YELLOW** — claude-mem + claude-memory-mcp installed; scoped filtering missing |
 | 6 | [Self-Scheduling](gap/06-self-scheduling.md)       | 🟢 **BUILT** — tropicron: cron, job store, precheck, per-job memory, shell-only jobs, dreaming |
 | 7 | [Persona Templates](gap/07-persona-templates.md)   | 🟢 **BUILT** — per-agent CLAUDE.md + SOUL.md, agent scaffolding via `/new` |
-| 8 | [Autonomy & Trust](gap/08-autonomy-trust.md)       | 🟢 **GREEN** (pending) — trust tiers 0–3 designed in Gateway PRP  |
+| 8 | [Autonomy & Trust](gap/08-autonomy-trust.md)       | 🟢 **BUILT** — trust tiers 0–3 enforced via PreToolUse hook per agent |
 | 9 | [Web App Generation](gap/09-web-app-generation.md) | 🟠 **YELLOW/RED** — can build apps, but no Canvas/A2UI           |
 
 ### [Extending Claude Code](extend/index.md)
@@ -60,13 +60,13 @@ Reference on how Claude Code can be extended via bash scripts, skills, hooks, MC
 - 🟢 Dreaming — nightly `dream-main` job compresses history and consolidates learnings
 - 🟢 Audit logging — tropiclog (hook-based JSON-lines)
 - 🟢 Memory — claude-mem (Chroma vectors + FTS5) + claude-memory-mcp (identity)
+- 🟢 Trust tiers — 0–3 levels enforced via PreToolUse hook per agent
 - 🟢 Verbose dev mode — `gateway.sh dev` shows all gateway/router/agent-pool activity on stderr
 
 **What's next:**
 
 - 🚧 Slack adapter — designed, not yet built
 - 🚧 Discord adapter — designed, not yet built
-- 🚧 Trust tiers — 0–3 levels designed in [Gateway PRP](todo/PRPs/2026-03-07-gateway.md)
 - ❌ Canvas/live rendering — no equivalent to OpenClaw's A2UI
 
 ## Links

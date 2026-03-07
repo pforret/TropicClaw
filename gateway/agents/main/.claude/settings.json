@@ -1,1 +1,15 @@
-{}
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/pforret/Code/AI/TropicClaw/gateway/hooks/trust-enforcer.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

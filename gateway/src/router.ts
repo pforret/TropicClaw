@@ -219,7 +219,15 @@ export class Router {
       path.join(agentDir, "agent.yaml"),
       `description: "${description}"\nmodel: sonnet\nmax_turns: 20\ntrust_tier: 1\ntimeout: 120\n`
     );
-    writeFileSync(path.join(agentDir, ".claude", "settings.json"), "{}");
+    const hooksDir = path.resolve(AGENTS_DIR, "..", "hooks");
+    writeFileSync(path.join(agentDir, ".claude", "settings.json"), JSON.stringify({
+      hooks: {
+        PreToolUse: [{
+          matcher: "",
+          hooks: [{ type: "command", command: `bash ${hooksDir}/trust-enforcer.sh` }],
+        }],
+      },
+    }, null, 2));
 
     // Switch to new agent
     this.sessionStore.switchAgent(message.channel, message.chatId, name);
