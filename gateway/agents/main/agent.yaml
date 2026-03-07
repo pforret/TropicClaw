@@ -1,0 +1,5 @@
+description: "General-purpose personal assistant"
+model: sonnet
+max_turns: 20
+trust_tier: 2
+timeout: 120

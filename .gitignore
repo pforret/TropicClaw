@@ -1,4 +1,11 @@
-.env
-.tmp/
-.idea/
+*/.env
 .claude/settings.local.json
+.env
+.idea/
+.tmp/
+/gateway/.env
+/gateway/bun.lock
+/gateway/data/
+/gateway/dist/
+/gateway/media/
+/gateway/node_modules/
