@@ -11,6 +11,14 @@ export interface UnifiedMessage {
       url: string;
       localPath?: string;
       mimeType?: string;
+      fileId?: string;
+      fileName?: string;
+    };
+    voice?: {
+      isVoice: true;
+      originalFileId: string;
+      duration: number;
+      transcription: string;
     };
   };
   timestamp: string;
@@ -29,6 +37,7 @@ export interface OutboundResponse {
     };
   };
   replyToMessageId?: string;
+  replyAs?: "text" | "voice" | "both";
 }
 
 export interface AgentConfig {

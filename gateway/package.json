@@ -9,8 +9,9 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@grammyjs/auto-retry": "^2.0.2",
     "fastify": "^5.3.3",
-    "telegraf": "^4.16.3",
+    "grammy": "^1.41.1",
     "yaml": "^2.7.1"
   },
   "devDependencies": {

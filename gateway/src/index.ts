@@ -10,6 +10,12 @@ import { TelegramAdapter } from "./adapters/telegram.js";
 import { discoverAgents } from "./agents.js";
 import { registerWebRoutes, buildChannelInfo } from "./web.js";
 
+// Strip CLAUDECODE env var so spawned claude processes don't detect nesting
+if (process.env.CLAUDECODE) {
+  console.warn("CLAUDECODE env var detected — clearing it to allow claude -p subprocesses");
+  delete process.env.CLAUDECODE;
+}
+
 // Load gateway config
 const CONFIG_PATH = path.resolve(import.meta.dir, "..", "config", "gateway.yaml");
 let gatewayYaml: Record<string, any> = {};
@@ -19,7 +25,7 @@ if (existsSync(CONFIG_PATH)) {
 
 const config: GatewayConfig = {
   owner: {
-    telegram_id: gatewayYaml.owner?.telegram_id ?? process.env.OWNER_TELEGRAM_ID,
+    telegram_id: gatewayYaml.owner?.telegram_id || process.env.TELEGRAM_OWNER_ID || process.env.OWNER_TELEGRAM_ID,
     slack_id: gatewayYaml.owner?.slack_id ?? process.env.OWNER_SLACK_ID,
     discord_id: gatewayYaml.owner?.discord_id ?? process.env.OWNER_DISCORD_ID,
   },
@@ -69,7 +75,8 @@ agentPool.setTypingCallback((channel, chatId) => {
 let telegramAdapter: TelegramAdapter | undefined;
 const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
 if (telegramToken) {
-  telegramAdapter = new TelegramAdapter(telegramToken);
+  const ownerId = config.owner.telegram_id || "";
+  telegramAdapter = new TelegramAdapter(telegramToken, ownerId);
   router.registerAdapter(telegramAdapter);
 }
 

@@ -1,7 +1,5 @@
-import { spawn } from "child_process";
 import path from "path";
 import type { AgentConfig, UnifiedMessage } from "./types.js";
-import { SessionStore } from "./session-store.js";
 
 interface QueueItem {
   agent: AgentConfig;
@@ -57,58 +55,61 @@ export class AgentPool {
     this.dispatch(item.agent, item.prompt).then(item.resolve, item.reject);
   }
 
-  private invokeAgent(agent: AgentConfig, prompt: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const args = [
-        "-p", prompt,
-        "--output-format", "json",
-        "--model", agent.model || "sonnet",
-        "--max-turns", String(agent.max_turns || 20),
-        "--dangerously-skip-permissions",
-      ];
+  private async invokeAgent(agent: AgentConfig, prompt: string): Promise<string> {
+    const args = [
+      "-p", prompt,
+      "--output-format", "json",
+      "--model", agent.model || "sonnet",
+      "--max-turns", String(agent.max_turns || 20),
+      "--dangerously-skip-permissions",
+    ];
 
-      if (agent.allowed_tools?.length) {
-        args.push("--allowedTools", agent.allowed_tools.join(","));
+    if (agent.allowed_tools?.length) {
+      args.push("--allowedTools", agent.allowed_tools.join(","));
+    }
+
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
+
+    console.log(`[agent-pool] Spawning: claude ${args.slice(0, 2).join(" ")}... (cwd: ${agent.directory})`);
+    const startTime = Date.now();
+
+    const proc = Bun.spawn(["claude", ...args], {
+      cwd: agent.directory,
+      env: {
+        ...env,
+        TRUST_TIER: String(agent.trust_tier || 1),
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    // Set up timeout
+    const timeoutMs = (agent.timeout || 120) * 1000;
+    const timer = setTimeout(() => {
+      console.error(`[agent-pool] Killing claude after ${agent.timeout}s timeout`);
+      proc.kill();
+    }, timeoutMs);
+
+    try {
+      const stdout = await new Response(proc.stdout).text();
+      const stderr = await new Response(proc.stderr).text();
+      const exitCode = await proc.exited;
+
+      clearTimeout(timer);
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(`[agent-pool] claude exited: code=${exitCode} elapsed=${elapsed}s stdout=${stdout.length}chars`);
+      if (stderr) console.log(`[agent-pool] stderr: ${stderr.slice(0, 500)}`);
+
+      if (exitCode !== 0) {
+        throw new Error(`claude exited with code ${exitCode}: ${stderr}`);
       }
 
-      const proc = spawn("claude", args, {
-        cwd: agent.directory,
-        timeout: (agent.timeout || 120) * 1000,
-        env: {
-          ...process.env,
-          TRUST_TIER: String(agent.trust_tier || 1),
-        },
-      });
-
-      let stdout = "";
-      let stderr = "";
-
-      proc.stdout.on("data", (data: Buffer) => {
-        stdout += data.toString();
-      });
-
-      proc.stderr.on("data", (data: Buffer) => {
-        stderr += data.toString();
-      });
-
-      proc.on("close", (code) => {
-        if (code !== 0) {
-          reject(new Error(`claude exited with code ${code}: ${stderr}`));
-          return;
-        }
-        try {
-          const result = parseClaudeOutput(stdout);
-          resolve(result);
-        } catch (e) {
-          // If JSON parsing fails, return raw stdout
-          resolve(stdout.trim());
-        }
-      });
-
-      proc.on("error", (err) => {
-        reject(new Error(`Failed to spawn claude: ${err.message}`));
-      });
-    });
+      return parseClaudeOutput(stdout);
+    } catch (err) {
+      clearTimeout(timer);
+      throw err;
+    }
   }
 
   runningCount(): number {
@@ -121,12 +122,10 @@ export class AgentPool {
 }
 
 function parseClaudeOutput(raw: string): string {
-  // claude --output-format json returns JSON with a "result" field
   try {
     const parsed = JSON.parse(raw);
     if (parsed.result) return parsed.result;
     if (parsed.content) {
-      // Handle array of content blocks
       if (Array.isArray(parsed.content)) {
         return parsed.content
           .filter((b: any) => b.type === "text")

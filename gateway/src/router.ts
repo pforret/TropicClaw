@@ -5,7 +5,8 @@ import { SessionStore } from "./session-store.js";
 import { AgentPool } from "./agent-pool.js";
 import { discoverAgents, getAgent } from "./agents.js";
 import { formatResponse, formatForChannel } from "./format.js";
-import { stageMedia } from "./media.js";
+import { stageMedia, stageInboundMedia } from "./media.js";
+import { TelegramAdapter } from "./adapters/telegram.js";
 
 const AGENTS_DIR = path.resolve(import.meta.dir, "..", "agents");
 const TEMPLATES_DIR = path.resolve(import.meta.dir, "..", "templates");
@@ -43,7 +44,17 @@ export class Router {
     if (!this.isOwner(message)) return; // silent drop
 
     // Stage media if present
-    if (message.content.media?.url) {
+    if (message.content.media?.fileId) {
+      // Telegram: download via adapter
+      const adapter = this.adapters.get(message.channel);
+      if (adapter && adapter instanceof TelegramAdapter) {
+        try {
+          await stageInboundMedia(adapter, message);
+        } catch {
+          message.content.text += " [Media attachment could not be downloaded]";
+        }
+      }
+    } else if (message.content.media?.url) {
       try {
         await stageMedia(message);
       } catch {
@@ -78,26 +89,38 @@ export class Router {
     // Log inbound message
     this.sessionStore.logMessage(agentName, "user", text, message.channel);
 
-    // Build prompt with media context
+    // Build prompt with media/voice context
     let prompt = text;
-    if (message.content.media?.localPath) {
+    if (message.content.voice?.isVoice) {
+      const dur = message.content.voice.duration;
+      prompt = `[Voice message (${dur}s), transcribed locally]:\n"${message.content.voice.transcription}"\n\nReply to this message. The user sent this as a voice message, so your response will be sent back as both text and voice.`;
+    } else if (message.content.media?.localPath) {
       prompt = `[Attached ${message.content.media.type}: ${message.content.media.localPath}] ${text}`;
+    } else if (text.startsWith("/voice ")) {
+      prompt = text.slice(7); // Strip /voice prefix
     }
+
+    // Determine reply mode
+    const replyAs = determineReplyMode(message);
 
     // Dispatch to agent pool
     const startTime = Date.now();
+    console.log(`[router] Dispatching to agent "${agentName}" via claude -p`);
     try {
       const result = await this.agentPool.dispatch(agent, prompt, message);
       const latencyMs = Date.now() - startTime;
+      console.log(`[router] Agent "${agentName}" responded in ${latencyMs}ms (${result.length} chars)`);
 
       // Log response
       this.sessionStore.logMessage(agentName, "assistant", result, message.channel, "gateway", latencyMs);
 
-      // Send response
+      // Send response with reply mode
       const response = this.makeResponse(agentName, message, result);
+      response.replyAs = replyAs;
       await this.sendResponse(response, message);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
+      console.error(`[router] Agent "${agentName}" error:`, errorMsg);
       const response = this.makeResponse(agentName, message, `Error: ${errorMsg}`);
       await this.sendResponse(response, message);
     }
@@ -219,6 +242,9 @@ export class Router {
     await adapter.send(response);
   }
 
+  // Handle /voice as a non-gateway command (passes through to agent with voice reply)
+  // This is handled in handleMessage prompt building above, not in handleCommand
+
   // Used by tropicron to deliver output to channels
   async deliver(
     channel: string,
@@ -237,4 +263,10 @@ export class Router {
     };
     await adapter.send(response);
   }
+}
+
+function determineReplyMode(msg: UnifiedMessage): "text" | "voice" | "both" {
+  if (msg.content.voice?.isVoice) return "both";
+  if (msg.content.text.startsWith("/voice ")) return "voice";
+  return "text";
 }
