@@ -168,7 +168,7 @@ With claude-memory-mcp installed, the remaining work is:
 
 5. **Template versioning** — Keep template files in git to track identity evolution.
 
-6. **Dreaming as persona evolution engine** — The Gateway's nightly dreaming process (see [Gateway PRP](../todo/PRPs/2026-03-07-gateway.md#dreaming--nightly-session-maintenance)) evolves persona files incrementally based on the day's conversations. SOUL.md gets refined communication patterns, USER.md accumulates preferences, TOOLS.md gets updated infra mappings. The `reflect` and `anchor` tools from claude-memory-mcp auto-promote recurring patterns into identity anchors. This closes the "template evolution tracking" gap without manual maintenance.
+6. **Dreaming as persona evolution engine** — The Gateway's nightly dreaming process (see [Gateway PRP](../todo/PRPs/2026-03-07-gateway.md#dreaming-nightly-session-maintenance)) evolves persona files incrementally based on the day's conversations. SOUL.md gets refined communication patterns, USER.md accumulates preferences, TOOLS.md gets updated infra mappings. The `reflect` and `anchor` tools from claude-memory-mcp auto-promote recurring patterns into identity anchors. This closes the "template evolution tracking" gap without manual maintenance.
 
 ## Verdict
 

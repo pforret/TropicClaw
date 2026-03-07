@@ -62,3 +62,9 @@ Reference on how Claude Code can be extended via bash scripts, skills, hooks, MC
 - [OpenClaw architecture](https://github.com/pforret/clarabot/blob/main/docs/AI-assistant/OPENCLAW_ARCHITECTURE.md) — the target architecture
 - [Claude Code docs](https://code.claude.com/docs/en/features-overview) — extension layer reference
 - [TropicClaw repo](https://github.com/pforret/TropicClaw) — this project
+
+ 
+<!-- test Sat Mar  7 16:01:35 CET 2026 -->
+<!-- test2 Sat Mar  7 16:02:11 CET 2026 -->
+<!-- standalone test Sat Mar  7 16:02:26 CET 2026 -->
+<!-- livereload test Sat Mar  7 16:06:45 CET 2026 -->
