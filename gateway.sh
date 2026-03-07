@@ -15,8 +15,14 @@ fi
 
 cd "$GATEWAY_DIR" || exit 1
 
-echo "Starting TropicClaw Gateway..."
-bun run src/index.ts 2>&1 | grep -E "^(Starting|Discovered|Gateway|HTTP|Telegram|Slack|Discord)" &
+MODE="${1:-start}"
+case "$MODE" in
+  dev)  BUN_CMD="bun run --watch src/index.ts" ;;
+  *)    BUN_CMD="bun run src/index.ts" ;;
+esac
+
+echo "Starting TropicClaw Gateway (${MODE})..."
+$BUN_CMD 2>&1 | grep -E "^(Starting|Discovered|Gateway|HTTP|Telegram|Slack|Discord|\[watch\])" &
 BUN_PID=$!
 
 # Wait for gateway to be ready
