@@ -2,14 +2,34 @@
 
 ## OpenClaw Feature
 
-The Gateway is OpenClaw's central orchestration layer:
+The Gateway is OpenClaw's central orchestration layer — a **long-running daemon** that you start once and it sits there:
 
-- **WebSocket/JSON-RPC 2.0** server for real-time agent communication
+- **Persistent connections** to Telegram, WhatsApp, Discord, Slack — maintained continuously
+- **WebSocket/JSON-RPC 2.0** API on port 18789 for real-time agent communication and external integrations
+- **OpenAI-compatible endpoint** on the same API — any tool that speaks the OpenAI API can connect
 - **HTTP webhooks** for receiving channel events (message received, button clicked, etc.)
 - **Cron scheduling** for periodic tasks (reminders, health checks, data sync)
 - **Health checks** and monitoring endpoints
 - **Config resolution** across environments and agents
-- Persistent daemon process managing all subsystem lifecycles
+- Subsystem lifecycle management (start/stop/restart channel adapters as child processes)
+
+### Message → Response Flow
+
+When a message arrives (e.g., from Telegram):
+
+1. Gateway receives event via persistent channel connection
+2. Checks config: **which agent handles this?** (channel mapping in `config.json`)
+3. Determines SessionId: continuation of existing conversation or new session?
+4. Assembles context: reads session history from `.jsonl` file, pulls bootstrap workspace files, adds available skills
+5. Sends assembled context + message to the LLM
+6. LLM returns text or tool call. If tool call → Gateway executes it → feeds result back → LLM thinks further → loop until final answer
+7. Response streams back to channel. Exchange written to `.jsonl`. `sessions.json` updated.
+
+### Security Model
+
+- **Localhost-only by default** — Gateway only listens on 127.0.0.1
+- **Remote access**: VPN via Tailscale or SSH tunnel
+- **Warning**: Exposing port 18789 to the open internet = full access to all agents, sessions, workspace files, and tools
 
 ## Claude Code Coverage
 
@@ -34,7 +54,7 @@ The Gateway is OpenClaw's central orchestration layer:
 | Gap                               | Severity | Notes                                                            |
 |-----------------------------------|----------|------------------------------------------------------------------|
 | No long-lived server/daemon mode  | HIGH     | Remote Control partially addresses this (keeps session alive) but is human-only, one session, Max plan |
-| No WebSocket/JSON-RPC endpoint    | HIGH     | Cannot receive real-time events from channels                    |
+| No WebSocket/JSON-RPC endpoint    | HIGH     | Cannot receive real-time events from channels; no OpenAI-compatible API |
 | No HTTP webhook listener          | HIGH     | Cannot natively host HTTP endpoints                              |
 | No cron/scheduler                 | MEDIUM   | Must rely on OS cron or external scheduler calling `claude -p`   |
 | No health check endpoint          | MEDIUM   | No built-in monitoring interface                                 |

@@ -13,6 +13,33 @@ OpenClaw's agent can **inspect, create, modify, and delete its own scheduled job
 - **Job persistence** — schedules survive restarts; stored in a durable store (DB, file, or config)
 - **Per-agent scoping** — each agent/persona manages its own schedule independently
 - **Job payloads** — each scheduled job carries a prompt or action to execute when triggered
+- **Delivery control** — `--announce` sends results to the channel; `--no-deliver` runs quietly
+
+### CLI Syntax
+
+```bash
+openclaw cron add --schedule "0 9 * * *" --agent personal \
+  --prompt "Check new emails, send summary to Telegram" --announce
+```
+
+### Heartbeat
+
+**Heartbeat** is a special short-cycle periodic check against `HEARTBEAT.md` — a checklist of things to verify:
+
+- Is monitoring running?
+- Is disk space okay?
+- Any errors in the logs?
+
+If something is wrong, the agent messages you proactively.
+
+### Integration Example
+
+Want Gmail checked every morning with a summary sent to Telegram:
+1. Enable browser tool (with saved session for Gmail auth)
+2. Set 9:00 cron with `--announce`
+3. Write the instruction in `AGENTS.md`
+4. Every morning: agent opens browser → reads inbox → filters by relevant senders → sends summary
+5. You haven't finished your coffee and it's already handled
 
 ### Example Scenarios
 
@@ -29,8 +56,9 @@ OpenClaw's agent can **inspect, create, modify, and delete its own scheduled job
 
 | Feature                         | Status  | Claude Code Primitive                                |
 |---------------------------------|---------|------------------------------------------------------|
-| Run a prompt on schedule        | No      | — (no built-in scheduler)                            |
+| Run a prompt on schedule        | Partial | Cronbot (`.claude/cronbot/`) — bash-based job scheduler with cron matching |
 | External cron invocation        | Partial | OS cron/launchd + `claude -p "prompt"`               |
+| Token-efficient health checks   | Yes     | Cronbot `precheck:` field — bash pre-check skips LLM if exit 0 + no output |
 | Agent reads its own schedule    | No      | —                                                    |
 | Agent modifies its own schedule | No      | —                                                    |
 | Job persistence                 | No      | —                                                    |
@@ -46,12 +74,13 @@ OpenClaw's agent can **inspect, create, modify, and delete its own scheduled job
 
 | Gap                      | Severity | Notes                                                                       |
 |--------------------------|----------|-----------------------------------------------------------------------------|
-| No scheduler process     | HIGH     | Claude Code is stateless between sessions; nothing runs between invocations |
-| No schedule store        | HIGH     | No built-in place to persist job definitions                                |
-| No self-modification API | HIGH     | Agent cannot programmatically add/remove/edit cron entries                  |
-| No job execution loop    | HIGH     | Nothing polls the schedule and fires jobs                                   |
-| No job status/history    | MEDIUM   | No record of past executions, successes, failures                           |
+| No scheduler process     | ~~HIGH~~ → **ADDRESSED** | Cronbot provides bash-based cron matching + job execution via `cronbot.sh run` |
+| No schedule store        | ~~HIGH~~ → **ADDRESSED** | Job definitions stored as `.md` files with YAML frontmatter in `.claude/cronbot/jobs/` |
+| No self-modification API | MEDIUM   | Agent can write/edit job `.md` files directly, but no dedicated tool API    |
+| No job execution loop    | ~~HIGH~~ → **ADDRESSED** | Cronbot runs every minute via OS crontab, matches jobs, launches `claude -p` |
+| No job status/history    | ~~MEDIUM~~ → **ADDRESSED** | Per-job log files in `logs/jobs/<name>/`, `cronbot.sh list` shows last run |
 | No retry/backoff         | LOW      | Failed jobs aren't automatically retried                                    |
+| No token-efficient checks | ~~MEDIUM~~ → **ADDRESSED** | `precheck:` frontmatter runs bash first; skips LLM if all-clear (exit 0, no stdout) |
 
 ## Build Recommendations
 
@@ -89,37 +118,6 @@ The agent writes schedule definitions to a JSON/YAML file. An external watcher p
 
 **Option A (MCP server)** provides the cleanest integration. The agent calls `schedule.create` the same way it calls any other tool, the MCP server handles persistence and execution, and the agent can query `schedule.list` to see its own jobs. This matches OpenClaw's model most closely.
 
-## Reference Job Catalog
-
-Beyond the scheduling mechanism, OpenClaw ships with **proactive job templates** — predefined scheduled tasks that make the agent useful out of the box. These are the "killer app" of self-scheduling: the agent doesn't just respond, it *initiates*.
-
-### Proactive Patterns
-
-| Job | Schedule | What it does | Outbound notification |
-|---|---|---|---|
-| **Morning briefing** | Daily 08:00 | Summarize overnight activity: new emails, GitHub notifications, calendar, weather | Send summary to preferred channel |
-| **GitHub watch** | Every 30 min | Check for new PRs, issues, CI failures, review requests | Notify on actionable items only |
-| **Email triage** | Every 1 hour | Scan inbox, categorize, flag urgent items | Alert on urgent; batch the rest for briefing |
-| **System health** | Every 15 min | Check disk, CPU, memory, service status | Alert only on anomalies |
-| **Evening reflection** | Daily 21:00 | Review day's interactions, evaluate own performance, update memory | Send daily summary + "anything I should know?" |
-| **Weekly review** | Monday 09:00 | Aggregate week's activity, identify patterns, suggest schedule adjustments | Send report to preferred channel |
-| **Learning digest** | Daily 22:00 | Process today's sessions, extract knowledge, update memory store | Silent (internal only) |
-
-### Outbound Notifications
-
-Proactive jobs need a way to **reach the user** — this is the outbound notification problem. It's a scheduling concern, not a channel concern: the job decides *whether* to notify, and the channel adapter handles *how*.
-
-The pattern:
-1. Scheduled job runs and produces findings
-2. Job evaluates: "Is this worth interrupting the user?" (severity, urgency, user preferences)
-3. If yes → route message to user's preferred channel via channel adapter
-4. If no → log silently, include in next summary
-
-This requires:
-- A **notification routing config** (which channel, what hours, what severity threshold)
-- Integration between the scheduler and channel adapters
-- User preference for notification urgency levels (immediate / batch / silent)
-
 ## Verdict
 
-**RED** — Claude Code has no scheduling primitives. The agent cannot create, inspect, or modify recurring jobs. A dedicated scheduler component (ideally an MCP server) must be built to bridge this gap. Beyond the mechanism, a catalog of proactive job templates and an outbound notification routing layer are needed to deliver the "agent that initiates" experience.
+**YELLOW** — Cronbot addresses the core scheduling gaps: job storage (`.md` files), cron matching (bash/awk), job execution (`claude -p`), history/logs, and token-efficient prechecks. The remaining gaps are: no dedicated tool API for self-modification (agent must write files directly), no retry/backoff, and no natural-language schedule parsing. An MCP server wrapping cronbot would close these remaining gaps.

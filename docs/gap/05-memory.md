@@ -2,7 +2,39 @@
 
 ## OpenClaw Feature
 
-OpenClaw's memory system provides persistent, searchable context:
+OpenClaw's memory system provides persistent, searchable context with a **two-level architecture**:
+
+### Level 1: Bootstrap (Injected Every Time)
+
+Every time the agent runs, Gateway reads these workspace files and injects them into context **before** the LLM sees the user's message:
+
+| File | Purpose |
+|------|---------|
+| `AGENTS.md` | Operating manual — how to think, when to use which tool, safety rules |
+| `SOUL.md` | Personality — tone, boundaries, priorities |
+| `USER.md` | User profile — name, preferences, context |
+| `IDENTITY.md` | Name, creature type, vibe, emoji |
+| `YYYY-MM-DD.md` | Today's daily log — tasks in progress, what was discussed |
+
+**Trade-off**: Bootstrap files eat tokens on every single request. The more content in bootstrap, the more expensive each call.
+
+### Level 2: Semantic Search (On-Demand)
+
+When the memory plugin is enabled, the agent searches `MEMORY.md` and other notes via a vector index — finds relevant chunks by meaning, not keywords. Only pulls what's relevant to the current query; doesn't burn context constantly.
+
+**Strategy**: Put critical stuff in bootstrap (tone, rules, who you are). Everything else goes into `MEMORY.md` and daily logs for semantic retrieval.
+
+### Storage Format
+
+Everything is **text files** — `.md` and `.json`, no database:
+
+- **Session history**: `.jsonl` per conversation (append-only)
+- **Session index**: `sessions.json`
+- **Workspace files**: `.md` files (AGENTS.md, SOUL.md, etc.)
+- **Long-term memory**: `MEMORY.md` — facts the agent writes on its own or when instructed
+- **Daily logs**: `YYYY-MM-DD.md` — what happened today, carried into tomorrow
+
+### Full Feature List
 
 - **Vector embeddings** for semantic similarity search
 - **Hybrid search**: BM25 (keyword) + vector similarity, combined scoring
@@ -10,6 +42,10 @@ OpenClaw's memory system provides persistent, searchable context:
 - **Conversation indexing**: Past conversations are indexed and retrievable
 - **Memory lifecycle**: Create, update, expire, delete memories
 - **Contextual injection**: Relevant memories automatically included in agent prompts
+
+### Compaction Risk
+
+Long dialogues grow into thousands of tokens. If the agent didn't write important decisions to `MEMORY.md` **before** compression/compaction, they're gone permanently. Fix: enable memory flush before compaction.
 
 ## Claude Code Coverage
 
@@ -44,78 +80,68 @@ OpenClaw's memory system provides persistent, searchable context:
 | No conversation indexing          | MEDIUM   | Past sessions not searchable                      |
 | No memory expiry/lifecycle        | LOW      | Memories persist until manually deleted           |
 | No automatic contextual injection | MEDIUM   | Must manually reference memory files              |
+| No compaction-safe memory flush   | MEDIUM   | Claude Code auto-compresses long sessions; no mechanism to flush important context to persistent storage before compression |
+| No daily log convention           | LOW      | No equivalent to OpenClaw's `YYYY-MM-DD.md` daily context files |
+
+## Existing MCP Plugins
+
+Several community MCP servers already address the memory gaps. Two have been installed for TropicClaw:
+
+### Installed: claude-mem (general memory)
+
+- **Package**: `npx -y claude-mem`
+- **Stars**: ~33k on GitHub
+- **Approach**: Hybrid semantic (Chroma vectors) + keyword (SQLite FTS5)
+- **Memory tiers**: 3-layer progressive disclosure (index → timeline → detail), ~10x token savings
+- **Capture**: Automatic via 5 lifecycle hooks (SessionStart, PostToolUse, Stop, etc.)
+- **Stack**: TypeScript, SQLite + Chroma, web viewer on :37777
+- **Install**: `claude mcp add claude-mem -- npx -y claude-mem`
+
+**OpenClaw gap coverage**:
+
+| Gap | Covered? |
+|-----|----------|
+| Vector embeddings | Yes (Chroma) |
+| Semantic search | Yes |
+| BM25/keyword search | Yes (FTS5) |
+| Hybrid search scoring | Yes |
+| Scoped filtering | Partial |
+| Conversation indexing | Yes (auto-capture) |
+| Auto contextual injection | Yes (progressive disclosure) |
+| Compaction-safe flush | Partial (hook-based capture) |
+
+### Other Notable MCP Memory Servers
+
+| Server | Stars | Approach | Standout Feature |
+|--------|-------|----------|------------------|
+| [mcp-memory-service](https://github.com/doobidoo/mcp-memory-service) | ~1.5k | Knowledge graph + BM25 + vector | Typed edges (causes/fixes/contradicts), 5ms retrieval |
+| [mcp-server-qdrant](https://github.com/qdrant/mcp-server-qdrant) | ~1.3k | Qdrant vector DB | Official, production-grade, simple store/find API |
+| [Vector Memory MCP](https://lobehub.com/mcp/cornebidouil-vector-memory-mcp) | — | sqlite-vec + sentence-transformers | Zero external DB dependencies |
+| [Codebase Memory MCP](https://lobehub.com/mcp/normcrandall-codebase-memory-mcp-server) | — | LanceDB + Ollama | Multi-repo scoped memories |
+| [MemCP](https://dev.to/dalimay28/how-i-built-memcp-giving-claude-a-real-memory-15co) | — | Embeddings with auto-fallback | 20x token savings vs raw loading |
+| [mem0 self-hosted](https://dev.to/n3rdh4ck3r/how-to-give-claude-code-persistent-memory-with-a-self-hosted-mem0-mcp-server-h68) | — | Qdrant + Ollama + Neo4j | Full knowledge graph, fully local |
 
 ## Build Recommendations
 
-1. **Vector database via MCP** — Build or integrate an MCP server wrapping a vector DB:
-   - **Lightweight**: ChromaDB, LanceDB, or SQLite-VSS for local/embedded use
-   - **Scalable**: Qdrant, Weaviate, or Pinecone for production
-   - MCP tools: `memory_store`, `memory_search`, `memory_delete`, `memory_list`
-2. **Embedding generation** — Use Claude's or OpenAI's embedding API, or local models (e.g., `sentence-transformers`) for generating vectors
-3. **Hybrid search** — Combine BM25 (via SQLite FTS5 or Tantivy) with vector similarity in the MCP server
-4. **Scoped filtering** — Store metadata (agent, channel, user, timestamp, tags) alongside each memory entry; filter at query time
-5. **Conversation indexing** — Post-session hook that summarizes and indexes the conversation into the memory store
-6. **Auto-injection** — Pre-session hook or `CLAUDE.md` template that queries relevant memories and injects them into the system prompt
+With claude-mem installed, the remaining work is:
+
+1. **Scoped filtering** — Extend or configure claude-mem to filter by agent, channel, user, and time range (needed for multi-agent)
+2. **Memory lifecycle** — Add expiry/deletion policies on top of claude-mem's storage
+3. **Daily log convention** — Adopt `YYYY-MM-DD.md` convention; hook into claude-mem's SessionEnd to auto-generate
+4. **Conversation indexing** — claude-mem's auto-capture covers this; verify coverage depth
+5. **Compaction-safe flush** — Add a pre-compaction hook to persist critical context to claude-mem before Claude Code's auto-compression
 
 ### Suggested Architecture
 
 ```
-┌────────-─────┐     MCP      ┌──────────────────┐
-│ Claude Code  │◄────────────►│  memory-mcp      │
-│  (agent)     │              │  ├─ embeddings   │
-└──────────-───┘              │  ├─ vector store │
-                              │  ├─ BM25 index   │
-                              │  └─ metadata DB  │
-                              └──────────────────┘
+┌────────────────┐     MCP      ┌──────────────────┐
+│ Claude Code    │◄────────────►│  claude-mem      │
+│  (agent)       │              │  ├─ Chroma (vec) │
+└────────────────┘              │  ├─ SQLite FTS5  │
+                                │  └─ web viewer   │
+                                └──────────────────┘
 ```
-
-## Learning Loops (Memory Feedback Stage)
-
-Beyond storage and retrieval, OpenClaw's memory includes a **learning loop** — a feedback stage where the agent processes its own experiences and writes improved knowledge back to the memory store. This is what makes the agent get better over time.
-
-### The Loop
-
-```
-Session → Post-session hook → Evaluate → Extract → Store → Pre-session injection → Next session
-```
-
-| Stage | What happens |
-|---|---|
-| **Summarize** | Compress the session into key facts, decisions, outcomes |
-| **Evaluate** | Did the agent perform well? Were there errors, dead ends, or user corrections? |
-| **Extract** | Identify reusable knowledge: patterns, user preferences, tool quirks, domain facts |
-| **Classify** | Tag extracted knowledge by type (fact, preference, procedure, correction) and scope (user, project, global) |
-| **Store** | Write to memory store with embeddings and metadata for future retrieval |
-| **Prune** | Update or expire outdated memories that conflict with new knowledge |
-
-### What This Enables
-
-- **Self-correction** — agent notices recurring mistakes and writes a note to avoid them
-- **Preference learning** — "user always wants TypeScript, not JavaScript" gets stored after 2-3 corrections
-- **Domain accumulation** — facts about the codebase, APIs, and infrastructure build up over sessions
-- **Tool mastery** — agent records which approaches worked/failed for specific tool combinations
-
-### Claude Code Coverage
-
-| Feature | Status | Notes |
-|---|---|---|
-| Post-session processing | Partial | `Stop` hook can trigger post-session scripts |
-| Session summarization | No | No built-in summarizer; must be custom |
-| Self-evaluation | No | Agent cannot review its own past performance |
-| Knowledge extraction | No | No structured extraction pipeline |
-| Memory update/prune | Partial | Can edit auto-memory files, but no conflict resolution |
-
-### Implementation
-
-The learning loop is a **scheduled job** (see [06-self-scheduling.md](06-self-scheduling.md)) that runs post-session or on a daily schedule:
-
-1. **Post-session hook** triggers a `claude -p` call with the session log (from tropiclog)
-2. The learning agent summarizes, evaluates, and extracts knowledge
-3. Extracted knowledge is written to the memory MCP server with appropriate metadata
-4. A nightly "consolidation" job merges, deduplicates, and prunes the memory store
-
-This connects self-scheduling (mechanism) → memory (storage) → agent runtime (improved prompts).
 
 ## Verdict
 
-**RED** — The memory subsystem is the widest gap. Claude Code's file-based memory (`CLAUDE.md`, auto-memory) provides basic persistence but none of the semantic search, hybrid retrieval, scoped filtering, or learning loops that OpenClaw requires. A dedicated memory MCP server must be built, likely the highest-priority custom component. The learning loop adds a feedback stage that transforms memory from passive storage into active self-improvement.
+**YELLOW** — With claude-mem installed, the memory subsystem moves from RED to YELLOW. Hybrid semantic+keyword search, auto-capture via hooks, and progressive disclosure are now available. Remaining gaps are scoped filtering (multi-agent/channel), memory lifecycle management, and compaction-safe flushing.
