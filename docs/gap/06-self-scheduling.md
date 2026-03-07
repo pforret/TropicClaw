@@ -52,72 +52,95 @@ Want Gmail checked every morning with a summary sent to Telegram:
 | User: "What jobs are running?"     | Lists all active scheduled jobs with next-run time |
 | User: "Cancel the email check"     | Deletes the job                                    |
 
-## Claude Code Coverage
+## Claude Code Coverage (via Tropicron)
 
-| Feature                         | Status  | Claude Code Primitive                                |
+Tropicron (`.claude/tropicron/`) is a purpose-built scheduling system for Claude Code. It replaces the earlier "cronbot" prototype with a full-featured bash-based scheduler.
+
+### Architecture
+
+- **Runner:** `tropicron.sh` — called every minute by OS crontab, matches cron expressions via awk, launches `claude -p` for matching jobs
+- **Job store:** `.md` files with YAML frontmatter in `.claude/tropicron/jobs/`
+- **Skill:** `/tropicron` slash command for interactive job management (list, add, remove, enable, disable, history, test)
+- **Memory skill:** `tropicron-memory` — documents per-job persistent memory via `<job>.memory.md` sibling files
+
+### Feature Coverage
+
+| Feature                         | Status  | Tropicron Primitive                                  |
 |---------------------------------|---------|------------------------------------------------------|
-| Run a prompt on schedule        | Partial | Cronbot (`.claude/cronbot/`) — bash-based job scheduler with cron matching |
-| External cron invocation        | Partial | OS cron/launchd + `claude -p "prompt"`               |
-| Token-efficient health checks   | Yes     | Cronbot `precheck:` field — bash pre-check skips LLM if exit 0 + no output |
-| Agent reads its own schedule    | No      | —                                                    |
-| Agent modifies its own schedule | No      | —                                                    |
-| Job persistence                 | No      | —                                                    |
-| Natural-language → schedule     | Partial | Claude can parse intent, but has nowhere to write it |
+| Run a prompt on schedule        | **Yes** | `tropicron.sh run` — cron matching + `claude -p`     |
+| External cron invocation        | **Yes** | OS crontab calls `tropicron.sh run` every minute     |
+| Token-efficient health checks   | **Yes** | `precheck:` field — bash pre-check skips LLM if exit 0 + no stdout |
+| Agent reads its own schedule    | **Yes** | `/tropicron list` or `tropicron.sh list` — shows all jobs with status, last run, next run |
+| Agent modifies its own schedule | **Yes** | Agent can create/edit/delete job `.md` files; `/tropicron add|remove|enable|disable` |
+| Job persistence                 | **Yes** | Jobs stored as `.md` files, survive restarts         |
+| Natural-language → schedule     | **Yes** | `/tropicron add` skill asks user interactively, Claude translates to cron expression |
+| Per-job memory                  | **Yes** | `memory: true` — loads/saves `<job>.memory.md` for cross-run context |
+| Singleton/overlap protection    | **Yes** | `singleton: true` — skips job if previous run still active (PID file check) |
+| Session continuity              | **Yes** | `continue: true` — uses `--continue` to resume previous Claude session |
+| Sandbox mode                    | **Yes** | `sandbox: true` — runs with `--sandbox` instead of `--dangerously-skip-permissions` |
+| Model override                  | **Yes** | `model:` frontmatter selects per-job model           |
+| Tool restrictions               | **Yes** | `allowedTools:` limits which tools the job can use   |
+| Failure/success notifications   | **Yes** | `notify_on_failure:` / `notify_on_success:` run arbitrary shell commands |
+| Execution history               | **Yes** | Per-job logs in `~/log/tropicron/`, `tropicron.sh history` |
+| Dry-run testing                 | **Yes** | `tropicron.sh test <name>` — shows what would execute without running |
+| Install/uninstall               | **Yes** | `tropicron.sh install|uninstall` — manages the OS crontab entry |
+| Precheck helpers                | **Yes** | `url-changed.sh` (URL diff detection), `cli-changed.sh` (CLI output diff detection) |
 
-**What works:**
+### Frontmatter Fields
 
-- `claude -p "prompt"` allows external schedulers to trigger agent actions
-- Claude can parse natural-language time expressions and output cron syntax
-- Hooks (`Stop`, `Notification`) could emit events when jobs complete
+| Field | Default | Description |
+|-------|---------|-------------|
+| `cron` | (required) | 5-field cron expression (supports ranges, steps, DOW names) |
+| `enabled` | true | Set false to pause |
+| `timeout` | 300 | Max seconds |
+| `singleton` | false | Skip if previous run still active |
+| `continue` | false | Resume last Claude session |
+| `memory` | false | Load/save `<job>.memory.md` |
+| `sandbox` | false | Use `--sandbox` (restricted permissions) |
+| `model` | — | Override model (e.g., `sonnet`) |
+| `max_turns` | — | Limit Claude's tool-use turns |
+| `allowedTools` | — | Comma-separated tool allowlist |
+| `workdir` | — | Working directory override |
+| `precheck` | — | Bash command; skip LLM if exit 0 + no stdout |
+| `notify_on_failure` | — | Shell command on failure |
+| `notify_on_success` | — | Shell command on success |
 
-## Gaps
+### Example Jobs
+
+- **health-check.md** — every 30 min, sandbox mode, simple liveness check
+- **daily-summary.md** — weekday 9am, memory-enabled, summarizes tasks
+- **url-monitor.md** — every 6h, precheck-driven URL change detection
+- **system-health.md** — every 15 min, precheck for disk/cron issues
+
+## Remaining Gaps
 
 | Gap                      | Severity | Notes                                                                       |
 |--------------------------|----------|-----------------------------------------------------------------------------|
-| No scheduler process     | ~~HIGH~~ → **ADDRESSED** | Cronbot provides bash-based cron matching + job execution via `cronbot.sh run` |
-| No schedule store        | ~~HIGH~~ → **ADDRESSED** | Job definitions stored as `.md` files with YAML frontmatter in `.claude/cronbot/jobs/` |
-| No self-modification API | MEDIUM   | Agent can write/edit job `.md` files directly, but no dedicated tool API    |
-| No job execution loop    | ~~HIGH~~ → **ADDRESSED** | Cronbot runs every minute via OS crontab, matches jobs, launches `claude -p` |
-| No job status/history    | ~~MEDIUM~~ → **ADDRESSED** | Per-job log files in `logs/jobs/<name>/`, `cronbot.sh list` shows last run |
-| No retry/backoff         | LOW      | Failed jobs aren't automatically retried                                    |
-| No token-efficient checks | ~~MEDIUM~~ → **ADDRESSED** | `precheck:` frontmatter runs bash first; skips LLM if all-clear (exit 0, no stdout) |
+| No retry/backoff         | LOW      | Failed jobs aren't automatically retried; `notify_on_failure` can alert     |
+| No MCP tool API          | LOW      | Agent uses file I/O + skill, not structured MCP tools — works but less discoverable |
+| No cross-project jobs    | LOW      | Each project has its own `tropicron/jobs/`; no global job registry          |
+| No web dashboard         | LOW      | CLI-only management; no visual overview of jobs/history                     |
 
-## Build Recommendations
+## Build Recommendations (Future)
 
 ### Option A: Schedule MCP Server
 
-Build an MCP server that exposes schedule CRUD as tools the agent can call:
+Wrap tropicron in an MCP server exposing schedule CRUD as tools. This would make jobs discoverable via `schedule.list`, `schedule.create`, etc. without the agent needing to know the file format.
 
-```
-Tools:
-  schedule.list          → returns all active jobs
-  schedule.create        → adds a new job (cron expr, prompt, metadata)
-  schedule.update        → modifies an existing job
-  schedule.delete        → removes a job
-  schedule.pause/resume  → toggles a job without deleting it
-  schedule.history       → returns recent execution log
-```
+- **Pro:** Cleanest integration; agent calls tools like any other MCP tool
+- **Con:** Extra process; tropicron already works well via skill + file I/O
 
-The MCP server runs as a persistent process alongside the gateway, backed by a durable store (SQLite, JSON file, or Redis). A job runner loop checks the schedule and invokes `claude -p` or the Claude API when jobs fire.
+### Option B: Retry/Backoff Extension
 
-### Option B: Crontab Wrapper Tool
+Add `retry: 3` and `backoff: exponential` frontmatter fields to tropicron. On failure, re-queue the job with increasing delay.
 
-Lighter approach: give the agent a Bash-based tool that reads/writes the OS crontab directly. Each cron entry calls `claude -p "job prompt"`.
+- **Pro:** Simple extension to existing system
+- **Con:** Needs careful interaction with singleton mode
 
-- **Pro:** No custom scheduler needed; leverages OS cron
-- **Con:** OS cron has no concept of pause/resume, limited metadata, no execution history, platform-dependent (crontab vs launchd)
+### Current Recommended Approach
 
-### Option C: Hook-Driven Schedule File
-
-The agent writes schedule definitions to a JSON/YAML file. An external watcher process monitors the file and syncs entries to the actual scheduler (cron, launchd, systemd timer, or node-cron).
-
-- **Pro:** Agent only needs file-write capability (already has it)
-- **Con:** Indirect; requires a sidecar process; no real-time feedback
-
-### Recommended Approach
-
-**Option A (MCP server)** provides the cleanest integration. The agent calls `schedule.create` the same way it calls any other tool, the MCP server handles persistence and execution, and the agent can query `schedule.list` to see its own jobs. This matches OpenClaw's model most closely.
+Tropicron's skill-based approach (`/tropicron add|list|enable|disable`) combined with direct file manipulation already covers the core OpenClaw scheduling model. An MCP wrapper would add discoverability but is not blocking.
 
 ## Verdict
 
-**YELLOW** — Cronbot addresses the core scheduling gaps: job storage (`.md` files), cron matching (bash/awk), job execution (`claude -p`), history/logs, and token-efficient prechecks. The remaining gaps are: no dedicated tool API for self-modification (agent must write files directly), no retry/backoff, and no natural-language schedule parsing. An MCP server wrapping cronbot would close these remaining gaps.
+**GREEN** — Tropicron fully addresses the self-scheduling gap. The agent can create, read, update, and delete its own scheduled jobs via the `/tropicron` skill or direct file editing. Jobs persist as `.md` files, support flexible cron expressions, per-job memory, precheck-based token efficiency, singleton protection, session continuity, sandbox mode, model/tool overrides, and failure/success notifications. The only remaining gaps are minor: no automatic retry/backoff, no MCP tool API (skill works fine), and no cross-project job registry.

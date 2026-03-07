@@ -39,16 +39,70 @@ Neither is appropriate for a personal AI assistant that runs 24/7, handles multi
 | Environment sandboxing | Partial | macOS sandbox for some operations; no container isolation |
 | Self-termination on boundary violation | No | — |
 
+## Gateway PRP: Trust Design
+
+The [Gateway PRP](../todo/PRPs/2026-03-07-gateway.md) defines a concrete trust model that addresses the graduated-tier gap. Key simplifications from the single-user model:
+
+### Single-User Model
+
+This is a **single-user system**. All channels are used by the same owner. There are no multi-user allowlists or per-user trust profiles. The only isolation axis is **per-agent** — different agents have different trust tiers.
+
+### Owner Verification (Layer 1)
+
+Before any processing, the router checks that the message comes from the owner (one platform ID per channel in `gateway.yaml`). Non-owner messages are silently dropped. Simple, fail-closed.
+
+### Trust Tiers (Layer 2)
+
+Each agent has a `trust_tier` in its `agent.yaml`. A `PreToolUse` hook (`trust-enforcer.sh`) enforces the tier at the Claude Code level:
+
+| Tier | Allowed | Typical Use |
+|---|---|---|
+| **0 — Read-only** | Read, Glob, Grep, WebSearch, WebFetch | Monitoring, reporting |
+| **1 — Local write** | + Write, Edit, Bash (non-destructive), git commit | Development tasks |
+| **2 — Network** | + MCP tools, API calls, send messages | Channel interactions |
+| **3 — System** | + Destructive ops, package install, force-push | Infrastructure (rare) |
+
+The tier is passed as `TRUST_TIER` env var when spawning `claude -p`. The hook inspects each tool call and denies operations above the agent's tier. Destructive patterns (`rm -rf`, `DROP TABLE`, `git push --force`) require tier 3 regardless.
+
+### Per-Agent Trust Profiles
+
+```yaml
+# gateway/agents/monitor/agent.yaml
+model: haiku
+trust_tier: 0          # read-only — can observe but not modify
+```
+
+```yaml
+# gateway/agents/coder/agent.yaml
+model: opus
+trust_tier: 1          # can write files and commit, not network
+```
+
+```yaml
+# gateway/agents/main/agent.yaml
+model: sonnet
+trust_tier: 2          # full access including MCP/network tools
+```
+
+### Tropicron Trust Integration
+
+Tropicron jobs already support trust-adjacent features:
+- `sandbox: true` — runs with `--sandbox` (restricted permissions)
+- `allowedTools:` — comma-separated tool allowlist per job
+- Safety guardrails section in each job `.md` (advisory but respected by Claude)
+
+The gateway's `trust-enforcer.sh` hook will also apply to tropicron jobs when they target a specific agent directory.
+
 ## Gaps
 
 | Gap | Severity | Notes |
 |---|---|---|
-| No graduated permission tiers | HIGH | Binary: approve-each-call or skip-all |
-| No per-context trust profiles | HIGH | Can't say "trust for file ops, ask for network" in a single session |
-| No enforceable guardrails for scheduled jobs | HIGH | CLAUDE.md guardrails are advisory; agent can ignore them |
-| No environment isolation | MEDIUM | No container/VM sandboxing for risky operations |
-| No trust audit trail | MEDIUM | No log of which permissions were granted/used |
-| No dynamic trust adjustment | LOW | Cannot increase/decrease trust based on track record |
+| No graduated permission tiers | ~~HIGH~~ → **DESIGNED** | Gateway PRP: trust tiers 0–3 with `PreToolUse` hook enforcement |
+| No per-context trust profiles | ~~HIGH~~ → **DESIGNED** | Gateway PRP: per-agent `trust_tier` in `agent.yaml` |
+| No enforceable guardrails for scheduled jobs | ~~HIGH~~ → **PARTIAL** | Tropicron: `sandbox`, `allowedTools`; gateway hook adds tier enforcement |
+| No environment isolation | MEDIUM | No container/VM sandboxing; Claude Code `--sandbox` is partial |
+| No trust audit trail | ~~MEDIUM~~ → **ADDRESSED** | Tropiclog records all tool calls with inputs/outputs as JSON-lines |
+| No dynamic trust adjustment | LOW | No automatic tier changes based on track record |
 
 ## Areas It Influences
 
@@ -56,46 +110,20 @@ This is a **cross-cutting concern** that affects every other subsystem:
 
 | Subsystem | How autonomy/trust applies |
 |---|---|
-| **Gateway** | Gateway must enforce trust boundaries before dispatching to agents |
-| **Channels** | Inbound messages from authorized users carry implicit trust; unknown senders don't |
-| **Agent Runtime** | Each agent/persona needs its own trust profile (a coding agent gets file access; a comms agent gets messaging access) |
-| **Tools & Skills** | Tool allow/deny lists are the mechanism, but they need per-context granularity |
-| **Memory** | Memory writes should be trusted; memory *reads* that influence actions need provenance |
-| **Self-Scheduling** | Scheduled jobs run unattended — trust model is critical; each job needs bounded authority |
-| **Persona Templates** | Trust profile should be part of the persona definition (TOOLS.md in OpenClaw) |
+| **Gateway** | Owner verification (layer 1) + trust tier enforcement (layer 2) before dispatching |
+| **Channels** | Single-user: all inbound messages verified as owner; non-owner silently dropped |
+| **Agent Runtime** | Each agent has its own `trust_tier` in `agent.yaml`; enforced by `PreToolUse` hook |
+| **Tools & Skills** | `allowedTools` per agent (`.claude/settings.json`) + tier-based hook filtering |
+| **Memory** | Memory writes at tier 1+; MCP-based memory tools at tier 2+ |
+| **Self-Scheduling** | Tropicron: `sandbox`, `allowedTools` per job; gateway hook adds tier enforcement |
+| **Persona Templates** | Trust tier is part of `agent.yaml` alongside model, description, timeout |
 
-## Build Recommendations
+## Remaining Build Work
 
-### Tiered Permission Model
-
-Define trust tiers that can be assigned per-agent, per-job, or per-channel:
-
-| Tier | Allowed | Example |
-|---|---|---|
-| **0 — Read-only** | Read files, search, web fetch | Monitoring/reporting jobs |
-| **1 — Local write** | + Write/edit files, git commit | Development tasks |
-| **2 — Network** | + API calls, web requests, send messages | Channel interactions |
-| **3 — System** | + Install packages, run services, destructive ops | Infrastructure tasks |
-
-### Enforceable Guardrails
-
-Move from advisory (CLAUDE.md text) to enforced (hook-based validation):
-
-- **PreToolUse hooks** that check proposed actions against the job's trust tier
-- **Deny-list patterns** (e.g., block `rm -rf /`, `DROP TABLE`, force-push) regardless of tier
-- **Rate limiting** — cap the number of tool calls per session/job to prevent runaway loops
-
-### Per-Job Trust Profiles
-
-Extend the tropicron job format with explicit trust declarations:
-
-```yaml
-trust_tier: 1
-allowed_tools: [Read, Write, Edit, Glob, Grep, Bash]
-denied_patterns: ["rm -rf", "git push --force", "DROP"]
-max_tool_calls: 50
-```
+1. **Implement `trust-enforcer.sh`** — `PreToolUse` hook that reads `TRUST_TIER` env var and denies operations above the tier. Designed in Gateway PRP, needs implementation.
+2. **Container isolation** (optional) — For tier-0 agents, consider running inside a container for true sandboxing. Low priority.
+3. **Rate limiting** (optional) — Cap tool calls per session to prevent runaway loops. Not yet designed.
 
 ## Verdict
 
-**YELLOW** — Claude Code has the *mechanism* (`allowed-tools`, approval prompts) but not the *model* (graduated tiers, per-context profiles, enforceable guardrails). The binary skip-permissions flag is insufficient for a 24/7 multi-agent system. A trust framework must be designed as a cross-cutting layer before building scheduled jobs or channel adapters.
+**YELLOW → GREEN (pending implementation)** — The trust model is now fully designed in the [Gateway PRP](../todo/PRPs/2026-03-07-gateway.md): single-user owner verification, 4-tier graduated permissions, per-agent trust profiles, `PreToolUse` hook enforcement, and tropiclog audit trail. The binary skip-permissions problem is solved by tiered enforcement. Upgrades to GREEN once `trust-enforcer.sh` is implemented.

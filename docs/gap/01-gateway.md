@@ -53,23 +53,57 @@ When a message arrives (e.g., from Telegram):
 
 | Gap                               | Severity | Notes                                                            |
 |-----------------------------------|----------|------------------------------------------------------------------|
-| No long-lived server/daemon mode  | HIGH     | Remote Control partially addresses this (keeps session alive) but is human-only, one session, Max plan |
-| No WebSocket/JSON-RPC endpoint    | HIGH     | Cannot receive real-time events from channels; no OpenAI-compatible API |
-| No HTTP webhook listener          | HIGH     | Cannot natively host HTTP endpoints                              |
-| No cron/scheduler                 | MEDIUM   | Must rely on OS cron or external scheduler calling `claude -p`   |
-| No health check endpoint          | MEDIUM   | No built-in monitoring interface                                 |
-| No subsystem lifecycle management | HIGH     | No way to start/stop/restart channel adapters as child processes |
+| No long-lived server/daemon mode  | ~~HIGH~~ → **DESIGNED** | Gateway PRP: Bun/Fastify long-running daemon, managed by launchd/systemd |
+| No WebSocket/JSON-RPC endpoint    | ~~HIGH~~ → **DESIGNED** | Gateway PRP: Fastify HTTP server on port 18789 with REST API endpoints |
+| No HTTP webhook listener          | ~~HIGH~~ → **DESIGNED** | Gateway PRP: `/api/message`, `/api/deliver`, `/health`, `/api/sessions` |
+| No cron/scheduler                 | ~~MEDIUM~~ → **ADDRESSED** | Tropicron: bash-based cron matching, job store, precheck, `/tropicron` skill |
+| No health check endpoint          | ~~MEDIUM~~ → **DESIGNED** | Gateway PRP: `GET /health` returns uptime, active sessions, queue depth |
+| No subsystem lifecycle management | ~~HIGH~~ → **DESIGNED** | Gateway PRP: channel adapters started/stopped by gateway; agent pool with concurrency control |
 
-## Build Recommendations
+## Gateway PRP Design
 
-1. **External gateway process** — Build a Node.js or Python long-lived server that:
-   - Hosts WebSocket + HTTP endpoints
-   - Manages cron via `node-cron` or `APScheduler`
-   - Spawns `claude -p` or uses the Claude API for agent interactions
-2. **MCP server for gateway control** — Expose gateway state (active channels, queue depth, health) as MCP tools so Claude can inspect/manage the gateway
-3. **Hooks as integration points** — Use `PostToolUse` hooks to emit events to the gateway (e.g., notify when a task completes)
-4. **Systemd/launchd** for process management — Run the gateway as a proper system service
+The [Gateway PRP](../todo/PRPs/2026-03-07-gateway.md) defines a Bun/Fastify orchestration layer that addresses all HIGH gaps. Key design decisions:
+
+- **Runtime:** Bun (fast startup, native TypeScript, built-in SQLite via `bun:sqlite`, `.env` loading)
+- **HTTP framework:** Fastify (schema-validated routes, better performance than Express)
+- **Invocation:** CLI-only via `claude -p` — gets MCP servers, hooks, skills, and built-in tools for free; ~2-3s spawn overhead acceptable for messaging
+- **State:** SQLite at `gateway/data/sessions.db` (sessions, messages, channel_agents tables)
+- **Process management:** launchd (macOS) / systemd (Linux) for auto-restart
+- **Security:** Localhost-only by default; owner verification per platform ID; fail-closed
+
+### API Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/message` | POST | Receive message from HTTP adapter |
+| `/api/deliver` | POST | Deliver tropicron output to a channel |
+| `/api/sessions/:agent/history` | GET | Load agent's message history |
+| `/api/sessions/:agent/log` | POST | Append message to agent's session |
+| `/api/sessions` | GET | List all sessions |
+| `/api/agents` | GET | List available agents |
+| `/health` | GET | Health check (uptime, sessions, queue) |
+
+### Process Architecture
+
+```
+launchd/systemd
+  └── gateway (Bun, long-running)
+        ├── Fastify HTTP server (:18789)
+        ├── Channel adapters (Telegram, Slack, Discord)
+        ├── Agent pool (spawns claude -p, concurrency limit: 3)
+        └── Session store (SQLite)
+
+crontab (every minute, independent)
+  └── tropicron run → spawns claude -p for scheduled jobs
+```
+
+### Implementation Phases
+
+1. **Phase 1:** Scaffold + HTTP adapter + agent pool + session store + router (testable without external accounts)
+2. **Phase 2:** Telegram adapter (long-polling via Telegraf)
+3. **Phase 3:** Dreaming (nightly session maintenance) + Slack adapter
+4. **Phase 4:** Trust enforcer hook, Discord adapter, media pipeline, process management
 
 ## Verdict
 
-**YELLOW** — Claude Code provides config resolution and lifecycle hooks, but lacks the persistent server process that is the Gateway's core function. A custom orchestration layer must be built, with Claude Code invoked as the agent runtime underneath.
+**YELLOW → GREEN (pending implementation)** — All gateway gaps are fully designed in the [Gateway PRP](../todo/PRPs/2026-03-07-gateway.md). Tropicron already addresses scheduling. The verdict upgrades to GREEN once the gateway is implemented.

@@ -164,9 +164,11 @@ With claude-memory-mcp installed, the remaining work is:
 
 3. **TOOLS.md as MCP config companion** — Store device/infrastructure mappings in a `TOOLS.md` that the agent reads alongside MCP server configs.
 
-4. **Multi-persona via project directories** — For multiple agent personas, use separate project directories each with their own `CLAUDE.md` + identity plugin instance.
+4. **Multi-persona via project directories** — For multiple agent personas, use separate project directories each with their own `CLAUDE.md` + identity plugin instance. The Gateway PRP's agent auto-discovery (`agents/*/CLAUDE.md`) implements this directly.
 
 5. **Template versioning** — Keep template files in git to track identity evolution.
+
+6. **Dreaming as persona evolution engine** — The Gateway's nightly dreaming process (see [Gateway PRP](../todo/PRPs/2026-03-07-gateway.md#dreaming--nightly-session-maintenance)) evolves persona files incrementally based on the day's conversations. SOUL.md gets refined communication patterns, USER.md accumulates preferences, TOOLS.md gets updated infra mappings. The `reflect` and `anchor` tools from claude-memory-mcp auto-promote recurring patterns into identity anchors. This closes the "template evolution tracking" gap without manual maintenance.
 
 ## Verdict
 

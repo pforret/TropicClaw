@@ -53,7 +53,7 @@ Each agent is a **separate folder** in `~/.openclaw/agents/`:
 | Tool execution           | Yes     | Built-in tools (Bash, Read, Edit, Write, Glob, Grep, etc.)      |
 | Tool permissions         | Yes     | `allowed-tools` in settings, per-project                        |
 | Session resume           | Yes     | `--resume` flag, `--continue` for last session                  |
-| Session logs             | Partial | Internal transcript stored, but not in append-only audit format |
+| Session logs             | Yes     | Tropiclog hook-based JSON-lines logging (append-only)            |
 
 **What works:**
 - Claude Code's core is a capable multi-turn agent runtime
@@ -62,37 +62,68 @@ Each agent is a **separate folder** in `~/.openclaw/agents/`:
 - `allowed-tools` restricts which tools an agent can use
 - `--resume` enables session continuity across CLI invocations
 
-## Gaps
+## Gateway PRP Coverage
+
+The [Gateway PRP](../todo/PRPs/2026-03-07-gateway.md) defines a Bun/Fastify orchestration layer that addresses the remaining agent runtime gaps. Key design decisions:
+
+### Multi-Agent Orchestration
+
+- **Agent auto-discovery** — scan `gateway/agents/*/CLAUDE.md`; filesystem is the registry
+- **Per-agent project directories** — each agent has its own `CLAUDE.md`, `agent.yaml`, `.claude/settings.json`
+- **Agent pool** — spawns `claude -p` per message with concurrency limits (default: 3)
+- **Agent switching** — `/switch <name>`, `/agents`, `/back`, `/new <name>` commands in any channel
+
+### Session Model
+
+- **One session per agent**, shared across all channels (session key = agent name)
+- Cross-channel continuity: tell `main` something on Telegram, it knows on Slack
+- Per-channel "current agent" pointer persisted in `channel_agents` SQLite table
+- Session store in `gateway/data/sessions.db` (sessions + messages + channel_agents tables)
+
+### Session Isolation
+
+- **Single-user model** — no multi-user access, no `dmScope` needed
+- Isolation is per-agent, not per-user: each agent has its own conversation history
+- Owner verification: one platform ID per channel in `gateway.yaml`, fail-closed
+
+### Trust Enforcement
+
+- **Trust tiers** (0–3): read-only → local write → network → system
+- `PreToolUse` hook (`trust-enforcer.sh`) enforces per-agent tier
+- Trust tier set via `TRUST_TIER` env var when spawning `claude -p`
+
+### Agent Registry
+
+- Auto-discovered from `gateway/agents/*/CLAUDE.md`
+- Per-agent config in `agent.yaml`: model, max_turns, trust_tier, timeout, description
+- `/new <name> [desc]` scaffolds new agent directory (copy personality from existing or use template)
+
+### Dreaming (Session Maintenance)
+
+- Nightly tropicron job (3am) per agent
+- Summarizes day's conversations, extracts learnings to memory plugins
+- Evolves persona files (SOUL.md, USER.md, TOOLS.md)
+- Compresses old messages (keep last 50 verbatim)
+- Dream logs in `agents/<name>/dreams/YYYY-MM-DD.md`
+
+## Remaining Gaps
 
 | Gap                                | Severity | Notes                                                             |
 |------------------------------------|----------|-------------------------------------------------------------------|
-| No append-only session logs        | ~~MEDIUM~~ → **ADDRESSED** | Addressed by `auditlog.sh` — hook-based JSON-lines logging |
-| No multi-agent orchestration       | HIGH     | Cannot run multiple agents simultaneously with different personas. OpenClaw: separate agent folders in `~/.openclaw/agents/`, each with own workspace/sessions/memory |
-| No agent-per-channel routing       | HIGH     | No mechanism to route messages from channel X to agent Y. OpenClaw: `config.json` channel mapping |
-| No session isolation (dmScope)     | HIGH     | No equivalent to `dmScope` for per-user session isolation. Without it, multi-user agents leak context between users |
-| No dynamic system prompt switching | MEDIUM   | `CLAUDE.md` is static within a session                            |
-| No agent registry                  | MEDIUM   | No way to define, list, and manage multiple agent configurations  |
-| No conversation indexing           | ~~LOW~~ → **PARTIAL** | Keyword search via `auditlog search`; semantic search still requires Memory MCP |
+| No append-only session logs        | ~~MEDIUM~~ → **ADDRESSED** | Tropiclog — hook-based JSON-lines logging |
+| No multi-agent orchestration       | ~~HIGH~~ → **DESIGNED** | Gateway PRP: agent pool with `claude -p`, per-agent directories, auto-discovery |
+| No agent-per-channel routing       | ~~HIGH~~ → **DESIGNED** | Gateway PRP: per-channel current agent pointer, `/switch` commands, `channel_agents` table |
+| No session isolation (dmScope)     | ~~HIGH~~ → **DESIGNED** | Gateway PRP: single-user model eliminates need; per-agent session isolation via separate directories |
+| No dynamic system prompt switching | ~~MEDIUM~~ → **DESIGNED** | Gateway PRP: each agent has own `CLAUDE.md`; `/new` scaffolds with template; dreaming evolves persona files |
+| No agent registry                  | ~~MEDIUM~~ → **DESIGNED** | Gateway PRP: auto-discovery from `agents/*/CLAUDE.md` + `agent.yaml` config |
+| No conversation indexing           | ~~LOW~~ → **PARTIAL** | Keyword search via tropiclog; semantic search still requires Memory MCP |
 
 ## Build Recommendations
 
-1. **Agent registry config** — Define agents in a YAML/JSON config with persona, allowed tools, assigned channels:
-   ```yaml
-   agents:
-     assistant:
-       system_prompt: prompts/assistant.md
-       channels: [slack, telegram]
-       allowed_tools: [Read, Write, WebSearch]
-     coder:
-       system_prompt: prompts/coder.md
-       channels: [discord]
-       allowed_tools: [Bash, Read, Edit, Write]
-   ```
-2. **Gateway-level routing** — The gateway process (see 01-gateway.md) routes incoming messages to the correct agent based on channel/user
-3. **Append-only logs via hooks** — ✅ Implemented as `tropiclog.sh` (see [PRP](../../PRPs/2026-02-27-tropiclog.md)). Uses `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SessionStart`, `SessionEnd` hooks to append JSON-lines per session. CLI provides search, list, stats, export.
-4. **Multi-agent via parallel `claude` processes** — Each agent runs as a separate `claude -p` invocation with its own `CLAUDE.md` and `allowed-tools`
-5. **Dynamic prompts via file switching** — Gateway writes the appropriate `CLAUDE.md` before invoking the agent
+1. **Gateway implementation** — The [Gateway PRP](../todo/PRPs/2026-03-07-gateway.md) covers multi-agent orchestration, channel routing, session management, trust enforcement, and agent lifecycle. Implementation in 4 phases: HTTP+agent pool → Telegram → dreaming+Slack → production hardening.
+2. **Append-only logs via hooks** — ✅ Implemented as tropiclog (see [PRP](../todo/PRPs/done/2026-02-27-tropiclog.md)). Uses `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SessionStart`, `SessionEnd` hooks. CLI provides search, list, stats, export.
+3. **Dreaming (session maintenance)** — Nightly tropicron job per agent: summarize conversations, extract learnings to memory plugins, evolve persona files, compress session history.
 
 ## Verdict
 
-**YELLOW** — Claude Code is already a strong single-agent runtime with multi-turn support, system prompts, and tool permissions. The main gaps are multi-agent orchestration and structured audit logging, which can be built in the gateway layer.
+**YELLOW → GREEN (pending implementation)** — Claude Code provides a strong single-agent runtime. All major agent runtime gaps (multi-agent orchestration, channel routing, session isolation, agent registry, dynamic prompts) are now fully designed in the [Gateway PRP](../todo/PRPs/2026-03-07-gateway.md). Tropiclog addresses audit logging. The verdict upgrades to GREEN once the gateway is implemented.

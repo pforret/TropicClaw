@@ -4,27 +4,26 @@ This directory maps each OpenClaw subsystem against Claude Code's native capabil
 
 ## Summary Matrix
 
-| # | Subsystem                                      | Verdict          | Key Claude Code Primitives                                    | Biggest Gap                                                    |
-|---|------------------------------------------------|------------------|---------------------------------------------------------------|----------------------------------------------------------------|
-| 1 | [Gateway](01-gateway.md)                       | **YELLOW**       | Hooks, Settings hierarchy, CLI `-p`, Remote Control           | No programmatic gateway (Remote Control is human-only)         |
-| 2 | [Channels](02-channels.md)                     | **RED**          | Slack MCP, Remote Control (web/mobile)                        | No adapters for WhatsApp, Telegram, Discord, etc.              |
-| 3 | [Agent Runtime](03-agent-runtime.md)           | **YELLOW**       | Multi-turn, `CLAUDE.md`, Skills fork, `allowed-tools`         | No multi-agent orchestration (audit logs ✅ via `tropiclog.sh`) |
-| 4 | [Tools & Skills](04-tools-skills.md)           | **GREEN/YELLOW** | Bash, file tools, WebSearch, Skills, MCP                      | No camera/location, limited sandboxing                         |
-| 5 | [Memory](05-memory.md)                         | **RED**          | `CLAUDE.md`, auto-memory files                                | No vector/semantic search                                      |
-| 6 | [Self-Scheduling](06-self-scheduling.md)       | **RED**          | None                                                          | No scheduler; agent cannot manage its own jobs                 |
-| 7 | [Persona Templates](07-persona-templates.md)   | **YELLOW**       | `CLAUDE.md`, auto-memory, settings                            | No structured identity/user/tools schemas                      |
-| 8 | [Autonomy & Trust](08-autonomy-trust.md)       | **YELLOW**       | `allowed-tools`, approval prompts, skip-permissions           | No graduated trust tiers; binary all-or-nothing                |
-| 9 | [Web App Generation](09-web-app-generation.md) | **YELLOW/RED**   | Full-stack app generation, Bash dev servers, Claude in Chrome | No Canvas/A2UI live rendering surface                          |
+| # | Subsystem                                      | Verdict              | Key Claude Code Primitives                                    | Biggest Gap                                                    |
+|---|------------------------------------------------|----------------------|---------------------------------------------------------------|----------------------------------------------------------------|
+| 1 | [Gateway](01-gateway.md)                       | **YELLOW**           | Hooks, Settings hierarchy, CLI `-p`, Remote Control           | No programmatic gateway ([PRP written](../todo/PRPs/2026-03-07-gateway.md)) |
+| 2 | [Channels](02-channels.md)                     | **RED**              | Slack MCP, Remote Control (web/mobile)                        | No adapters for WhatsApp, Telegram, Discord, etc. (Gateway PRP covers Telegram, Slack, Discord) |
+| 3 | [Agent Runtime](03-agent-runtime.md)           | **GREEN** (pending)  | Multi-turn, `CLAUDE.md`, Skills fork, `allowed-tools`, tropiclog | All gaps designed in Gateway PRP; awaiting implementation      |
+| 4 | [Tools & Skills](04-tools-skills.md)           | **GREEN/YELLOW**     | Bash, file tools, WebSearch, Skills, MCP                      | No camera/location, limited sandboxing                         |
+| 5 | [Memory](05-memory.md)                         | **YELLOW**           | `CLAUDE.md`, auto-memory, claude-mem, claude-memory-mcp       | Scoped filtering, lifecycle management                         |
+| 6 | [Self-Scheduling](06-self-scheduling.md)       | **GREEN**            | Tropicron: cron matching, job store, precheck, memory, skill  | No retry/backoff (minor)                                       |
+| 7 | [Persona Templates](07-persona-templates.md)   | **GREEN/YELLOW**     | `CLAUDE.md`, claude-memory-mcp identity anchors               | No structured user model, no device registry                   |
+| 8 | [Autonomy & Trust](08-autonomy-trust.md)       | **GREEN** (pending)  | `allowed-tools`, trust-enforcer hook, tropiclog audit trail   | Implement `trust-enforcer.sh` hook (designed in Gateway PRP)   |
+| 9 | [Web App Generation](09-web-app-generation.md) | **YELLOW/RED**       | Full-stack app generation, Bash dev servers, Claude in Chrome  | No Canvas/A2UI live rendering surface                          |
 
 ## Build Priority
 
 Based on gap severity and dependency order:
 
-1. **Memory MCP server** (RED) — Foundational; other subsystems benefit from persistent, searchable memory
-2. **Channel adapters** (RED) — Required for any multi-channel deployment; start with 1-2 channels (e.g., Telegram + Slack)
-3. **Gateway process** (YELLOW) — Needed once multiple channels and agents must be orchestrated
-4. **Agent routing & orchestration** (YELLOW) — Builds on gateway; enables multi-agent per-channel
-5. **Tool extensions** (GREEN/YELLOW) — Lowest priority; most tools already exist
+1. **Gateway + channel adapters** — [PRP written](../todo/PRPs/2026-03-07-gateway.md). Bun/Fastify orchestrator with Telegram (Phase 1), Slack (Phase 3), Discord (Phase 4). Addresses gateway, channels, agent runtime, trust tiers.
+2. **Memory improvements** (YELLOW) — claude-mem and claude-memory-mcp installed; remaining: scoped filtering, lifecycle management
+3. **Canvas/live rendering** (YELLOW/RED) — No equivalent to OpenClaw's Canvas; lowest priority since Claude Code excels at full-stack generation
+4. **Tool extensions** (GREEN/YELLOW) — Most tools already exist; camera/location are niche gaps
 
 ## What Claude Code Already Provides
 
@@ -41,15 +40,22 @@ These capabilities require **no custom development**:
 - Basic persistent memory (auto-memory files)
 - Remote Control — persistent local session accessible from web/mobile (human-operated, outbound-polling relay)
 
+## What Has Been Built
+
+| Component                       | Type                   | Status                                         |
+|---------------------------------|------------------------|-------------------------------------------------|
+| Self-scheduling (tropicron)     | Bash scheduler + skill | ✅ Done — cron matching, job store, precheck, memory, `/tropicron` skill |
+| Append-only audit logs          | Hook + CLI             | ✅ Done — tropiclog hook-based JSON-lines logging |
+| Memory (semantic search)        | MCP server             | ✅ Installed — claude-mem (Chroma + FTS5) + claude-memory-mcp (identity) |
+| Persona templates               | MCP server + files     | ✅ Partial — claude-memory-mcp identity anchors, SOUL.md/USER.md planned |
+
 ## What Must Be Built
 
-| Component                       | Type                   | Estimated Complexity                           |
-|---------------------------------|------------------------|------------------------------------------------|
-| Memory MCP server               | MCP server             | High — embeddings, vector DB, hybrid search    |
-| Channel adapters (per platform) | MCP server each        | Medium per adapter                             |
-| Gateway/orchestrator            | Standalone service     | High — WebSocket, routing, cron, lifecycle     |
-| Agent registry & routing        | Config + gateway logic | Medium                                         |
-| Append-only audit logs          | Hook + log service     | Low                                            |
-| Message normalization           | Library/schema         | Medium                                         |
-| Self-scheduling MCP server      | MCP server             | Medium — CRUD tools, job runner, durable store |
-| Canvas MCP server               | MCP server             | Medium — HTTP + WebSocket, live HTML rendering |
+| Component                       | Type                   | Status                                         |
+|---------------------------------|------------------------|-------------------------------------------------|
+| Gateway/orchestrator            | Bun/Fastify service    | 📋 [PRP written](../todo/PRPs/2026-03-07-gateway.md) — agent pool, routing, sessions, trust |
+| Channel adapters                | Gateway adapters       | 📋 Designed in Gateway PRP — Telegram (Phase 2), Slack (Phase 3), Discord (Phase 4) |
+| Agent registry & routing        | Gateway logic          | 📋 Designed — auto-discovery from `agents/*/CLAUDE.md`, `/switch` commands |
+| Message normalization           | Gateway types          | 📋 Designed — `UnifiedMessage` schema in Gateway PRP |
+| Trust tiers (0–3)               | Hook + gateway config  | 📋 Designed — `trust-enforcer.sh` PreToolUse hook |
+| Canvas MCP server               | MCP server             | ❌ Not started — no equivalent to OpenClaw's Canvas/A2UI |
