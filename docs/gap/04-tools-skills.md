@@ -31,8 +31,8 @@ The `exec` tool is the most powerful and most dangerous. Three isolation modes:
 
 OpenClaw includes a single built-in tool for browser control:
 
-| Tool | Purpose |
-|------|---------|
+| Tool             | Purpose                                                           |
+|------------------|-------------------------------------------------------------------|
 | `browser.action` | Automate a headless browser (navigate, click, screenshot, scrape) |
 
 Key characteristics:
@@ -52,7 +52,7 @@ OpenClaw also provides canvas rendering via `canvas.eval` (render live HTML/JS) 
 | File operations            | Yes     | `Read`, `Write`, `Edit`, `Glob`, `Grep` tools                |
 | Web search                 | Yes     | `WebSearch` tool                                             |
 | Web fetch                  | Yes     | `WebFetch` tool                                              |
-| Browser automation         | Yes     | Multiple options — see detailed comparison below              |
+| Browser automation         | Yes     | Multiple options — see detailed comparison below             |
 | Skill packages             | Yes     | Skills system (project skills, document-skills, user skills) |
 | Per-agent tool permissions | Yes     | `allowed-tools` in settings                                  |
 | MCP tool integration       | Yes     | MCP servers expose custom tools                              |
@@ -70,13 +70,13 @@ OpenClaw also provides canvas rendering via `canvas.eval` (render live HTML/JS) 
 
 Claude Code offers **five complementary approaches** to browser automation, each at a different level:
 
-| Approach | Type | How it works | Best for |
-|----------|------|-------------|----------|
-| **Claude in Chrome** (first-party) | Chrome extension | Accessibility tree with screenshot fallback; inherits user's browser sessions, cookies, auth | Interacting with authenticated web apps; visual workflows; GIF/workflow recording |
-| **Playwright MCP** ([microsoft/playwright-mcp](https://github.com/microsoft/playwright-mcp)) | MCP server | Reads accessibility tree (structured DOM, 2-5KB) — no screenshots needed | Fast, deterministic web automation; form filling, scraping, testing |
-| **Dev-Browser Skill** | Installable skill | Controls existing Chrome instance via ARIA snapshots; reuses user's logged-in browser | Testing/debugging web apps already open in Chrome |
-| **Computer Use** ([API docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool)) | API tool | Takes screenshots, Claude counts pixels, moves mouse, clicks, types | Any GUI app (not just browsers); visual/spatial layouts |
-| **Playwright Skill** ([lackeyjb/playwright-skill](https://github.com/lackeyjb/playwright-skill)) | Installable skill | Claude writes custom Playwright code, executes via `run.js` in visible browser | Maximum flexibility; complex multi-step workflows |
+| Approach                                                                                                       | Type              | How it works                                                                                 | Best for                                                                          |
+|----------------------------------------------------------------------------------------------------------------|-------------------|----------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------|
+| **Claude in Chrome** (first-party)                                                                             | Chrome extension  | Accessibility tree with screenshot fallback; inherits user's browser sessions, cookies, auth | Interacting with authenticated web apps; visual workflows; GIF/workflow recording |
+| **Playwright MCP** ([microsoft/playwright-mcp](https://github.com/microsoft/playwright-mcp))                   | MCP server        | Reads accessibility tree (structured DOM, 2-5KB) — no screenshots needed                     | Fast, deterministic web automation; form filling, scraping, testing               |
+| **Dev-Browser Skill**                                                                                          | Installable skill | Controls existing Chrome instance via ARIA snapshots; reuses user's logged-in browser        | Testing/debugging web apps already open in Chrome                                 |
+| **Computer Use** ([API docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool)) | API tool          | Takes screenshots, Claude counts pixels, moves mouse, clicks, types                          | Any GUI app (not just browsers); visual/spatial layouts                           |
+| **Playwright Skill** ([lackeyjb/playwright-skill](https://github.com/lackeyjb/playwright-skill))               | Installable skill | Claude writes custom Playwright code, executes via `run.js` in visible browser               | Maximum flexibility; complex multi-step workflows                                 |
 
 Additional options include [ExecuteAutomation's mcp-playwright](https://github.com/executeautomation/mcp-playwright) (143 device emulation profiles), Puppeteer MCP, and web scraping skills (Firecrawl, Apify).
 
@@ -95,38 +95,38 @@ This is the closest Claude Code equivalent to OpenClaw's zero-config `browser.ac
 
 #### OpenClaw `browser.action` vs Claude Code options
 
-| Capability | OpenClaw `browser.action` | Claude in Chrome | Playwright MCP | Computer Use |
-|-----------|--------------------------|-----------------|----------------|--------------|
-| Navigate URLs | Yes | Yes | Yes | Yes |
-| Click elements | Yes | Yes (a11y tree + visual fallback) | Yes (a11y tree — deterministic) | Yes (pixel coords — visual) |
-| Fill forms | Implied | Yes (inherits auth/sessions) | Yes (structured interaction) | Yes (keyboard typing) |
-| Take screenshots | Yes | Yes (with GIF recording) | Yes | Yes (core mechanism) |
-| Scrape content | Yes | Yes (structured + visual) | Yes (structured a11y data) | No (vision-based) |
-| Device emulation | Not specified | No (uses real Chrome) | Yes (mobile/tablet/desktop) | No |
-| Authentication | Not specified | **Yes** — inherits user's sessions | Visible browser — manual login | Same |
-| Zero-config built-in | **Yes** | **Near-zero** — Chrome extension only | **No** — MCP server setup | **No** — Docker/VM, beta |
-| Non-browser apps | No | No | No | **Yes** — any desktop GUI |
-| Speed | Not specified | Medium (a11y tree + occasional screenshots) | Fast (2-5KB, no vision) | Slow (500KB-2MB per step) |
-| Cost | Not specified | Medium (text + occasional vision) | Low (text-only) | High (vision tokens per step) |
+| Capability           | OpenClaw `browser.action` | Claude in Chrome                            | Playwright MCP                  | Computer Use                  |
+|----------------------|---------------------------|---------------------------------------------|---------------------------------|-------------------------------|
+| Navigate URLs        | Yes                       | Yes                                         | Yes                             | Yes                           |
+| Click elements       | Yes                       | Yes (a11y tree + visual fallback)           | Yes (a11y tree — deterministic) | Yes (pixel coords — visual)   |
+| Fill forms           | Implied                   | Yes (inherits auth/sessions)                | Yes (structured interaction)    | Yes (keyboard typing)         |
+| Take screenshots     | Yes                       | Yes (with GIF recording)                    | Yes                             | Yes (core mechanism)          |
+| Scrape content       | Yes                       | Yes (structured + visual)                   | Yes (structured a11y data)      | No (vision-based)             |
+| Device emulation     | Not specified             | No (uses real Chrome)                       | Yes (mobile/tablet/desktop)     | No                            |
+| Authentication       | Not specified             | **Yes** — inherits user's sessions          | Visible browser — manual login  | Same                          |
+| Zero-config built-in | **Yes**                   | **Near-zero** — Chrome extension only       | **No** — MCP server setup       | **No** — Docker/VM, beta      |
+| Non-browser apps     | No                        | No                                          | No                              | **Yes** — any desktop GUI     |
+| Speed                | Not specified             | Medium (a11y tree + occasional screenshots) | Fast (2-5KB, no vision)         | Slow (500KB-2MB per step)     |
+| Cost                 | Not specified             | Medium (text + occasional vision)           | Low (text-only)                 | High (vision tokens per step) |
 
 **Key finding:** Claude Code now has **near-parity** with OpenClaw's `browser.action` via **Claude in Chrome** — a first-party Chrome extension that inherits browser sessions, uses accessibility trees with screenshot fallback, and requires minimal setup (just the extension). For headless/automated scenarios, **Playwright MCP** remains the most efficient option. The zero-config gap is largely closed by Claude in Chrome for interactive use cases.
 
 ## Gaps
 
-| Gap                          | Severity | Notes                                                                         |
-|------------------------------|----------|-------------------------------------------------------------------------------|
-| No **built-in** browser tool | LOW      | Largely addressed by Claude in Chrome (first-party extension); headless automation still requires MCP setup |
-| No canvas/live HTML rendering | MEDIUM  | No equivalent to OpenClaw's `canvas.eval` — see [Web App Generation](08-web-app-generation.md) for detailed analysis |
-| No camera/photo tools        | LOW      | Not typical for CLI agents; could add via MCP                                 |
-| No GPS/location tools        | LOW      | Could integrate via MCP with device APIs                                      |
-| No sandboxed shell isolation | MEDIUM   | Bash runs in user's environment; no container isolation. OpenClaw has three exec modes: sandbox (Docker), gateway (whitelist via `exec-approvals.json`), full (unrestricted) |
-| No tool versioning           | LOW      | Skills don't have version management                                          |
-| No tool marketplace/registry | LOW      | No centralized discovery beyond MCP registry                                  |
+| Gap                            | Severity | Notes                                                                                                                |
+|--------------------------------|----------|----------------------------------------------------------------------------------------------------------------------|
+| No **built-in** browser tool   | LOW      | Largely addressed by Claude in Chrome (first-party extension); headless automation still requires MCP setup          |
+| No canvas/live HTML rendering  | MEDIUM   | No equivalent to OpenClaw's `canvas.eval` — see [Web App Generation](09-web-app-generation.md) for detailed analysis |
+| No camera/photo tools          | LOW      | Not typical for CLI agents; could add via MCP                                                                        |
+| No GPS/location tools          | LOW      | Could integrate via MCP with device APIs                                                                             |
+| No sandboxed shell isolation   | MEDIUM   | Bash runs in user's environment; no container isolation. OpenClaw has three exec modes: sandbox (Docker), gateway (whitelist via `exec-approvals.json`), full (unrestricted) |
+| No tool versioning             | LOW      | Skills don't have version management                                                                                 |
+| No tool marketplace/registry   | LOW      | No centralized discovery beyond MCP registry                                                                         |
 
 ## Build Recommendations
 
 1. **Browser automation setup skill** — Create a `/browser-setup` skill or bash script that auto-installs and configures the Playwright MCP server (similar to how `auditlog.sh install` registers hooks). This would close the zero-config gap with OpenClaw's `browser.action`.
-2. **Canvas rendering via MCP** — Build a Canvas MCP server with HTTP + WebSocket for live rendering of agent-generated content. See [Web App Generation gap analysis](08-web-app-generation.md) for detailed design.
+2. **Canvas rendering via MCP** — Build a Canvas MCP server with HTTP + WebSocket for live rendering of agent-generated content. See [Web App Generation gap analysis](09-web-app-generation.md) for detailed design.
 3. **Camera/location via MCP** — If needed, build lightweight MCP servers that interface with device APIs (e.g., `imagesnap` on macOS for camera, CoreLocation for GPS)
 4. **Sandboxed execution** — Use Docker containers or macOS sandbox profiles for tool isolation:
    - MCP servers can run inside containers
@@ -136,4 +136,5 @@ This is the closest Claude Code equivalent to OpenClaw's zero-config `browser.ac
 
 ## Verdict
 
-**GREEN/YELLOW** — Claude Code's tool and skill ecosystem is the closest match to OpenClaw's design. Browser automation is now near-parity: Claude in Chrome provides first-party, near-zero-config browser interaction (comparable to OpenClaw's `browser.action`), while Playwright MCP offers superior headless automation with accessibility trees. The remaining gaps are: no canvas/live HTML rendering (MEDIUM — see [Web App Generation](08-web-app-generation.md) for detailed analysis), and minor items (camera, location, sandboxing) addressable with targeted MCP servers.
+**GREEN/YELLOW** — Claude Code's tool and skill ecosystem is the closest match to OpenClaw's design. Browser automation is now near-parity: Claude in Chrome provides first-party, near-zero-config browser interaction (comparable to OpenClaw's `browser.action`), while Playwright MCP offers superior headless automation with accessibility trees. The remaining gaps are: no canvas/live HTML rendering (MEDIUM — see [Web App Generation](09-web-app-generation.md) for detailed analysis), and minor items (camera, location, sandboxing) addressable with targeted MCP servers.
+

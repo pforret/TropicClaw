@@ -26,13 +26,13 @@ For each OpenClaw subsystem, determine what Claude Code already provides nativel
 
 ## Scheduling
 
-You can manage your own scheduled jobs. Job files live in `.claude/cronbot/jobs/`.
+You can manage your own scheduled jobs. Job files live in `.claude/tropicron/jobs/`.
 
 - To schedule a new task: create a `.md` file in `jobs/` with cron frontmatter
 - To pause a job: set `enabled: false` in frontmatter
 - To change frequency: edit the `cron:` field
 - To cancel: delete the file
-- To see what's scheduled: run `.claude/cronbot/cronbot.sh list`
+- To see what's scheduled: run `.claude/tropicron/tropicron.sh list`
 - To persist context across runs: write to `<job>.memory.md` in the same directory
 
 ### Safety in scheduled jobs

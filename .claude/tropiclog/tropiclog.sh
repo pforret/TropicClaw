@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ### ==============================================================================
-### auditlog — Append-Only Audit Logging for Claude Code Sessions
+### tropiclog — Append-Only Audit Logging for Claude Code Sessions
 ### Records every tool call, session start/end as JSON-lines via Claude Code hooks.
 ### Provides CLI for querying, searching, and managing audit logs.
 ### ==============================================================================
@@ -38,7 +38,7 @@ flag|Q|QUIET|no output
 flag|V|VERBOSE|also show debug messages
 flag|f|FORCE|do not ask for confirmation (always yes)
 option|L|LOG_DIR|folder for session logs|${AUDITLOG_LOG_DIR:-}
-option|T|TMP_DIR|folder for temp files|/tmp/auditlog
+option|T|TMP_DIR|folder for temp files|/tmp/tropiclog
 option|F|FORMAT|export format (json, csv, text)|json
 option|D|DAYS|max age in days for clean|30
 option|N|LINES|number of lines for tail|20
@@ -59,7 +59,7 @@ function Script:main() {
 
   # Override log_file to avoid polluting session JSONL files
   # (bashew's Script:initialize sets log_file in LOG_DIR, but we need it separate)
-  log_file="$script_install_folder/logs/auditlog.$execution_day.log"
+  log_file="$script_install_folder/logs/tropiclog.$execution_day.log"
   mkdir -p "$script_install_folder/logs"
 
   case "${action,,}" in
@@ -197,8 +197,8 @@ function hooks_installed() {
   local settings_file
   settings_file=$(get_settings_file)
   if [[ -f "$settings_file" ]] && command -v jq &>/dev/null; then
-    # Check if any hook references auditlog
-    if jq -e '.hooks // {} | to_entries[] | .value[]?.hooks[]?.command // "" | test("auditlog")' "$settings_file" &>/dev/null; then
+    # Check if any hook references tropiclog
+    if jq -e '.hooks // {} | to_entries[] | .value[]?.hooks[]?.command // "" | test("tropiclog")' "$settings_file" &>/dev/null; then
       return 0
     fi
   fi
@@ -640,11 +640,11 @@ function do_install() {
   # Build the hooks JSON to merge
   local hooks_json
   hooks_json=$(jq -nc '{
-    "PreToolUse": [{"hooks": [{"type": "command", "command": ".claude/auditlog/hooks/on-tool-use.sh pre"}]}],
-    "PostToolUse": [{"hooks": [{"type": "command", "command": ".claude/auditlog/hooks/on-tool-use.sh post"}]}],
-    "PostToolUseFailure": [{"hooks": [{"type": "command", "command": ".claude/auditlog/hooks/on-tool-use.sh failure"}]}],
-    "SessionStart": [{"hooks": [{"type": "command", "command": ".claude/auditlog/hooks/on-session.sh start"}]}],
-    "SessionEnd": [{"hooks": [{"type": "command", "command": ".claude/auditlog/hooks/on-session.sh end"}]}]
+    "PreToolUse": [{"hooks": [{"type": "command", "command": ".claude/tropiclog/hooks/on-tool-use.sh pre"}]}],
+    "PostToolUse": [{"hooks": [{"type": "command", "command": ".claude/tropiclog/hooks/on-tool-use.sh post"}]}],
+    "PostToolUseFailure": [{"hooks": [{"type": "command", "command": ".claude/tropiclog/hooks/on-tool-use.sh failure"}]}],
+    "SessionStart": [{"hooks": [{"type": "command", "command": ".claude/tropiclog/hooks/on-session.sh start"}]}],
+    "SessionEnd": [{"hooks": [{"type": "command", "command": ".claude/tropiclog/hooks/on-session.sh end"}]}]
   }')
 
   if [[ -f "$settings_file" ]]; then
@@ -722,7 +722,7 @@ function do_uninstall() {
     IO:confirm "Remove audit log hooks from settings?" || return 1
   fi
 
-  # Remove hook entries that reference auditlog
+  # Remove hook entries that reference tropiclog
   local tmp_file
   tmp_file=$(mktemp)
   jq '
@@ -730,7 +730,7 @@ function do_uninstall() {
     .hooks |= with_entries(
       .value |= map(
         select(
-          (.hooks // []) | all(.command // "" | test("auditlog") | not)
+          (.hooks // []) | all(.command // "" | test("tropiclog") | not)
         )
       ) |
       .value |= if length == 0 then empty else . end

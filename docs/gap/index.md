@@ -4,16 +4,17 @@ This directory maps each OpenClaw subsystem against Claude Code's native capabil
 
 ## Summary Matrix
 
-| # | Subsystem                                | Verdict          | Key Claude Code Primitives                            | Biggest Gap                                            |
-|---|------------------------------------------|------------------|-------------------------------------------------------|--------------------------------------------------------|
-| 1 | [Gateway](01-gateway.md)                 | **YELLOW**       | Hooks, Settings hierarchy, CLI `-p`, Remote Control   | No programmatic gateway (Remote Control is human-only) |
-| 2 | [Channels](02-channels.md)               | **RED**          | Slack MCP, Remote Control (web/mobile)                | No adapters for WhatsApp, Telegram, Discord, etc.      |
-| 3 | [Agent Runtime](03-agent-runtime.md)     | **YELLOW**       | Multi-turn, `CLAUDE.md`, Skills fork, `allowed-tools` | No multi-agent orchestration (audit logs ✅ via `auditlog.sh`) |
-| 4 | [Tools & Skills](04-tools-skills.md)     | **GREEN/YELLOW** | Bash, file tools, WebSearch, Skills, MCP              | No camera/location, limited sandboxing                 |
-| 5 | [Memory](05-memory.md)                   | **RED**          | `CLAUDE.md`, auto-memory files                        | No vector/semantic search                              |
-| 6 | [Self-Scheduling](06-self-scheduling.md) | **RED**          | None                                                  | No scheduler; agent cannot manage its own jobs         |
-| 7 | [Persona Templates](07-persona-templates.md) | **YELLOW** | `CLAUDE.md`, auto-memory, settings                    | No structured identity/user/tools schemas              |
-| 8 | [Web App Generation](08-web-app-generation.md) | **YELLOW/RED** | Full-stack app generation, Bash dev servers, Claude in Chrome | No Canvas/A2UI live rendering surface                  |
+| # | Subsystem                                      | Verdict          | Key Claude Code Primitives                                    | Biggest Gap                                                    |
+|---|------------------------------------------------|------------------|---------------------------------------------------------------|----------------------------------------------------------------|
+| 1 | [Gateway](01-gateway.md)                       | **YELLOW**       | Hooks, Settings hierarchy, CLI `-p`, Remote Control           | No programmatic gateway (Remote Control is human-only)         |
+| 2 | [Channels](02-channels.md)                     | **RED**          | Slack MCP, Remote Control (web/mobile)                        | No adapters for WhatsApp, Telegram, Discord, etc.              |
+| 3 | [Agent Runtime](03-agent-runtime.md)           | **YELLOW**       | Multi-turn, `CLAUDE.md`, Skills fork, `allowed-tools`         | No multi-agent orchestration (audit logs ✅ via `tropiclog.sh`) |
+| 4 | [Tools & Skills](04-tools-skills.md)           | **GREEN/YELLOW** | Bash, file tools, WebSearch, Skills, MCP                      | No camera/location, limited sandboxing                         |
+| 5 | [Memory](05-memory.md)                         | **RED**          | `CLAUDE.md`, auto-memory files                                | No vector/semantic search                                      |
+| 6 | [Self-Scheduling](06-self-scheduling.md)       | **RED**          | None                                                          | No scheduler; agent cannot manage its own jobs                 |
+| 7 | [Persona Templates](07-persona-templates.md)   | **YELLOW**       | `CLAUDE.md`, auto-memory, settings                            | No structured identity/user/tools schemas                      |
+| 8 | [Autonomy & Trust](08-autonomy-trust.md)       | **YELLOW**       | `allowed-tools`, approval prompts, skip-permissions           | No graduated trust tiers; binary all-or-nothing                |
+| 9 | [Web App Generation](09-web-app-generation.md) | **YELLOW/RED**   | Full-stack app generation, Bash dev servers, Claude in Chrome | No Canvas/A2UI live rendering surface                          |
 
 ## Build Priority
 
@@ -42,13 +43,13 @@ These capabilities require **no custom development**:
 
 ## What Must Be Built
 
-| Component | Type | Estimated Complexity |
-|-----------|------|---------------------|
-| Memory MCP server | MCP server | High — embeddings, vector DB, hybrid search |
-| Channel adapters (per platform) | MCP server each | Medium per adapter |
-| Gateway/orchestrator | Standalone service | High — WebSocket, routing, cron, lifecycle |
-| Agent registry & routing | Config + gateway logic | Medium |
-| Append-only audit logs | Hook + log service | Low |
-| Message normalization | Library/schema | Medium |
-| Self-scheduling MCP server | MCP server | Medium — CRUD tools, job runner, durable store |
-| Canvas MCP server | MCP server | Medium — HTTP + WebSocket, live HTML rendering |
+| Component                       | Type                   | Estimated Complexity                           |
+|---------------------------------|------------------------|------------------------------------------------|
+| Memory MCP server               | MCP server             | High — embeddings, vector DB, hybrid search    |
+| Channel adapters (per platform) | MCP server each        | Medium per adapter                             |
+| Gateway/orchestrator            | Standalone service     | High — WebSocket, routing, cron, lifecycle     |
+| Agent registry & routing        | Config + gateway logic | Medium                                         |
+| Append-only audit logs          | Hook + log service     | Low                                            |
+| Message normalization           | Library/schema         | Medium                                         |
+| Self-scheduling MCP server      | MCP server             | Medium — CRUD tools, job runner, durable store |
+| Canvas MCP server               | MCP server             | Medium — HTTP + WebSocket, live HTML rendering |

@@ -1,4 +1,4 @@
-# cronbot runtime state (gitignore)
+# tropicron runtime state (gitignore)
 locks/
 logs/
 *.memory.md

@@ -10,7 +10,6 @@ The Agent Runtime manages conversation state and agent execution:
 - **Multi-agent orchestration** — separate personas with distinct tools, running simultaneously
 - **Agent-per-channel routing** — different agents handle different channels
 - **Tool execution sandboxing** — agents can only use their allowed tools
-- **Tool chaining loop** — agent calls a tool → gets result → thinks → calls another → loop until final answer
 
 ### Multi-Agent Architecture
 
@@ -90,7 +89,7 @@ Each agent is a **separate folder** in `~/.openclaw/agents/`:
        allowed_tools: [Bash, Read, Edit, Write]
    ```
 2. **Gateway-level routing** — The gateway process (see 01-gateway.md) routes incoming messages to the correct agent based on channel/user
-3. **Append-only logs via hooks** — ✅ Implemented as `auditlog.sh` (see [PRP](../../PRPs/2026-02-27-auditlog.md)). Uses `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SessionStart`, `SessionEnd` hooks to append JSON-lines per session. CLI provides search, list, stats, export.
+3. **Append-only logs via hooks** — ✅ Implemented as `tropiclog.sh` (see [PRP](../../PRPs/2026-02-27-tropiclog.md)). Uses `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SessionStart`, `SessionEnd` hooks to append JSON-lines per session. CLI provides search, list, stats, export.
 4. **Multi-agent via parallel `claude` processes** — Each agent runs as a separate `claude -p` invocation with its own `CLAUDE.md` and `allowed-tools`
 5. **Dynamic prompts via file switching** — Gateway writes the appropriate `CLAUDE.md` before invoking the agent
 

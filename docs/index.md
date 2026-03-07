@@ -22,16 +22,17 @@ Claude Code already provides many of these capabilities natively. TropicClaw map
 
 Subsystem-by-subsystem comparison of OpenClaw vs Claude Code. Each page covers what Claude Code provides, what's missing, and how to build the missing pieces.
 
-| # | Subsystem | Verdict |
-|---|-----------|---------|
-| 1 | [Gateway](gap/01-gateway.md) | **YELLOW** — hooks + CLI work, but no persistent daemon |
-| 2 | [Channels](gap/02-channels.md) | **RED** — only Slack MCP + Remote Control; rest must be built |
-| 3 | [Agent Runtime](gap/03-agent-runtime.md) | **YELLOW** — multi-turn works; no multi-agent orchestration |
-| 4 | [Tools & Skills](gap/04-tools-skills.md) | **GREEN/YELLOW** — most tools exist natively |
-| 5 | [Memory](gap/05-memory.md) | **RED** — no vector/semantic search |
-| 6 | [Self-Scheduling](gap/06-self-scheduling.md) | **RED** — no scheduler; agent can't manage its own jobs |
-| 7 | [Persona Templates](gap/07-persona-templates.md) | **YELLOW** — CLAUDE.md covers it, but unstructured |
-| 8 | [Web App Generation](gap/08-web-app-generation.md) | **YELLOW/RED** — can build apps, but no Canvas/A2UI live rendering |
+| # | Subsystem                                          | Verdict                                                            |
+|---|----------------------------------------------------|--------------------------------------------------------------------|
+| 1 | [Gateway](gap/01-gateway.md)                       | **YELLOW** — hooks + CLI work, but no persistent daemon            |
+| 2 | [Channels](gap/02-channels.md)                     | **RED** — only Slack MCP + Remote Control; rest must be built      |
+| 3 | [Agent Runtime](gap/03-agent-runtime.md)           | **YELLOW** — multi-turn works; no multi-agent orchestration        |
+| 4 | [Tools & Skills](gap/04-tools-skills.md)           | **GREEN/YELLOW** — most tools exist natively                       |
+| 5 | [Memory](gap/05-memory.md)                         | **RED** — no vector/semantic search                                |
+| 6 | [Self-Scheduling](gap/06-self-scheduling.md)       | **RED** — no scheduler; agent can't manage its own jobs            |
+| 7 | [Persona Templates](gap/07-persona-templates.md)   | **YELLOW** — CLAUDE.md covers it, but unstructured                 |
+| 8 | [Autonomy & Trust](gap/08-autonomy-trust.md)       | **YELLOW** — has mechanisms, but no graduated trust model          |
+| 9 | [Web App Generation](gap/09-web-app-generation.md) | **YELLOW/RED** — can build apps, but no Canvas/A2UI live rendering |
 
 ### [Extending Claude Code](extend/index.md)
 

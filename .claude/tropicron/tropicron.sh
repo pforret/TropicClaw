@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ### ==============================================================================
-### cronbot — Self-Modifiable Agent Scheduling System
+### tropicron — Self-Modifiable Agent Scheduling System
 ### Called every minute by crontab, decides fast whether to run any job,
 ### and if so, launches it by passing a <JOB>.md file to `claude -p`.
 ### ==============================================================================
@@ -49,8 +49,8 @@ flag|h|help|show usage
 flag|Q|QUIET|no output
 flag|V|VERBOSE|also show debug messages
 flag|f|FORCE|do not ask for confirmation (always yes)
-option|L|LOG_DIR|folder for log files|${CRONBOT_LOG_DIR:-$HOME/log/cronbot}
-option|T|TMP_DIR|folder for temp files|/tmp/cronbot
+option|L|LOG_DIR|folder for log files|${CRONBOT_LOG_DIR:-$HOME/log/tropicron}
+option|T|TMP_DIR|folder for temp files|/tmp/tropicron
 option|J|JOB_DIR|folder for job definitions|${CRONBOT_JOB_DIR:-}
 choice|1|action|action to perform|run,list,add,remove,enable,disable,history,test,install,uninstall,check,env
 param|?|input|job name or file path
@@ -782,31 +782,31 @@ function do_install() {
   local script_path
   script_path="$(cd "$script_install_folder" && pwd)/$script_basename"
 
-  local cron_entry="* * * * * $script_path run -Q >> ${LOG_DIR}/cronbot.log 2>&1"
+  local cron_entry="* * * * * $script_path run -Q >> ${LOG_DIR}/tropicron.log 2>&1"
 
-  if crontab -l 2>/dev/null | grep -q "cronbot.*run"; then
-    IO:alert "cronbot already in crontab:"
-    crontab -l 2>/dev/null | grep "cronbot"
+  if crontab -l 2>/dev/null | grep -q "tropicron.*run"; then
+    IO:alert "tropicron already in crontab:"
+    crontab -l 2>/dev/null | grep "tropicron"
     return 0
   fi
 
   (crontab -l 2>/dev/null; echo "$cron_entry") | crontab -
-  IO:success "Added cronbot to crontab"
+  IO:success "Added tropicron to crontab"
   IO:print "Entry: $cron_entry"
 }
 
 function do_uninstall() {
-  if ! crontab -l 2>/dev/null | grep -q "cronbot.*run"; then
-    IO:print "cronbot not found in crontab"
+  if ! crontab -l 2>/dev/null | grep -q "tropicron.*run"; then
+    IO:print "tropicron not found in crontab"
     return 0
   fi
 
   if ! ((FORCE)); then
-    IO:confirm "Remove cronbot from crontab?" || return 1
+    IO:confirm "Remove tropicron from crontab?" || return 1
   fi
 
-  crontab -l 2>/dev/null | grep -v "cronbot.*run" | crontab -
-  IO:success "Removed cronbot from crontab"
+  crontab -l 2>/dev/null | grep -v "tropicron.*run" | crontab -
+  IO:success "Removed tropicron from crontab"
 }
 
 #####################################################################
