@@ -191,6 +191,10 @@ export class SessionStore {
     };
   }
 
+  getDb(): Database {
+    return this.db;
+  }
+
   close() {
     this.db.close();
   }

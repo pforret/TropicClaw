@@ -10,3 +10,5 @@
 /gateway/media/
 /gateway/node_modules/
 /log/
+/apps/bookmarks/media/
+/apps/bookmarks/publish/

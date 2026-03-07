@@ -24,6 +24,10 @@ export class TelegramAdapter implements ChannelAdapter {
     this.bot.api.config.use(autoRetry());
   }
 
+  getBot(): Bot {
+    return this.bot;
+  }
+
   async start() {
     // Register message handler
     this.bot.on("message", (ctx) => this.handleMessage(ctx));

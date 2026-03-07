@@ -12,6 +12,7 @@
     "@grammyjs/auto-retry": "^2.0.2",
     "fastify": "^5.3.3",
     "grammy": "^1.41.1",
+    "twitter-api-v2": "^1.29.0",
     "yaml": "^2.7.1"
   },
   "devDependencies": {

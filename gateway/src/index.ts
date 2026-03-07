@@ -10,6 +10,9 @@ import { TelegramAdapter } from "./adapters/telegram.js";
 import { discoverAgents } from "./agents.js";
 import { registerWebRoutes, buildChannelInfo } from "./web.js";
 import { checkSchedulerPing } from "./adapters/http.js";
+import { BookmarkService } from "../../apps/bookmarks/bookmark-service.js";
+import type { Publisher } from "../../apps/bookmarks/publishers/twitter.js";
+import { registerBookmarkRoutes } from "./bookmark-routes.js";
 
 // Strip CLAUDECODE env var so spawned claude processes don't detect nesting
 if (process.env.CLAUDECODE) {
@@ -80,6 +83,37 @@ if (telegramToken) {
   telegramAdapter = new TelegramAdapter(telegramToken, ownerId);
   router.registerAdapter(telegramAdapter);
 }
+
+// Initialize bookmark service + publishers
+const bookmarkPublishers: Publisher[] = [];
+
+if (process.env.TELEGRAM_CHANNEL_ID && telegramAdapter) {
+  const { TelegramChannelPublisher } = await import("../../apps/bookmarks/publishers/telegram-channel.js");
+  bookmarkPublishers.push(
+    new TelegramChannelPublisher(telegramAdapter.getBot(), process.env.TELEGRAM_CHANNEL_ID)
+  );
+  console.log(`[gateway] Telegram Channel publisher enabled: ${process.env.TELEGRAM_CHANNEL_ID}`);
+}
+
+const publishDir = path.resolve(import.meta.dir, "..", "..", "apps", "bookmarks", "publish");
+if (existsSync(path.join(publishDir, ".git"))) {
+  const { GitHubBlogPublisher } = await import("../../apps/bookmarks/publishers/github-blog.js");
+  bookmarkPublishers.push(new GitHubBlogPublisher());
+  console.log("[gateway] Astro blog publisher enabled");
+}
+
+if (process.env.TWITTER_API_KEY) {
+  try {
+    const { TwitterPublisher } = await import("../../apps/bookmarks/publishers/twitter.js");
+    bookmarkPublishers.push(new TwitterPublisher());
+    console.log("[gateway] Twitter publisher enabled");
+  } catch (err) {
+    console.warn("[gateway] Twitter publisher disabled:", err);
+  }
+}
+
+const bookmarkService = new BookmarkService(sessionStore.getDb(), agentPool, bookmarkPublishers);
+registerBookmarkRoutes(router, bookmarkService);
 
 // Start all adapters
 async function start() {
