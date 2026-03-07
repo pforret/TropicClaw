@@ -782,7 +782,9 @@ function do_install() {
   local script_path
   script_path="$(cd "$script_install_folder" && pwd)/$script_basename"
 
-  local cron_entry="* * * * * $script_path run -Q >> ${LOG_DIR}/tropicron.log 2>&1"
+  local log_dir="${script_install_folder}/../../log/tropicron"
+  mkdir -p "$log_dir"
+  local cron_entry="* * * * * $script_path run -Q >> ${log_dir}/tropicron.\$(date '+\%Y-\%m-\%d').log 2>&1"
 
   if crontab -l 2>/dev/null | grep -q "tropicron.*run"; then
     IO:alert "tropicron already in crontab:"
