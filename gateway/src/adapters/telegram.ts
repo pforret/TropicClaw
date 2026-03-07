@@ -36,7 +36,7 @@ export class TelegramAdapter implements ChannelAdapter {
     // Start long polling (non-blocking)
     this.bot.start({
       onStart: (botInfo) => {
-        console.log(`Telegram bot @${botInfo.username} started (long polling)`);
+        console.log(`[telegram] Telegram bot @${botInfo.username} started (long polling)`);
       },
     });
   }

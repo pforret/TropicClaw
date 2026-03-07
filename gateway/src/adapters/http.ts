@@ -111,7 +111,7 @@ export class HttpAdapter implements ChannelAdapter {
 
   async start() {
     await this.app.listen({ port: this.port, host: this.host });
-    console.log(`HTTP adapter listening on ${this.host}:${this.port}`);
+    console.log(`[gateway] HTTP adapter listening on ${this.host}:${this.port}`);
   }
 
   async stop() {

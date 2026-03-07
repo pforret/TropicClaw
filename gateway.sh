@@ -22,7 +22,12 @@ case "$MODE" in
 esac
 
 echo "Starting TropicClaw Gateway (${MODE})..."
-$BUN_CMD 2>&1 | grep -E "^(Starting|Discovered|Gateway|HTTP|Telegram|Slack|Discord|\[watch\])" &
+if [[ "$MODE" == "dev" ]]; then
+  # Verbose: show all output on stderr, truncated to 100 chars per line
+  TROPICCLAW_VERBOSE=1 $BUN_CMD 2>&1 | cut -c1-100 >&2 &
+else
+  $BUN_CMD 2>&1 | grep -E "^\[" &
+fi
 BUN_PID=$!
 
 # Wait for gateway to be ready

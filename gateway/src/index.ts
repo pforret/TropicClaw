@@ -12,7 +12,7 @@ import { registerWebRoutes, buildChannelInfo } from "./web.js";
 
 // Strip CLAUDECODE env var so spawned claude processes don't detect nesting
 if (process.env.CLAUDECODE) {
-  console.warn("CLAUDECODE env var detected — clearing it to allow claude -p subprocesses");
+  console.warn("[gateway] CLAUDECODE env var detected — clearing it to allow claude -p subprocesses");
   delete process.env.CLAUDECODE;
 }
 
@@ -44,7 +44,7 @@ const router = new Router(config, sessionStore, agentPool);
 
 // Discover agents
 const agents = discoverAgents();
-console.log(`Discovered ${agents.length} agent(s): ${agents.map((a) => a.name).join(", ") || "none"}`);
+console.log(`[gateway] Discovered ${agents.length} agent(s): ${agents.map((a) => a.name).join(", ") || "none"}`);
 
 // Start HTTP adapter (always)
 const httpAdapter = new HttpAdapter(config.port, config.host, sessionStore);
@@ -82,7 +82,7 @@ if (telegramToken) {
 
 // Start all adapters
 async function start() {
-  console.log("Starting TropicClaw Gateway...");
+  console.log("[gateway] Starting TropicClaw Gateway...");
 
   await httpAdapter.start();
 
@@ -92,12 +92,12 @@ async function start() {
     if (tgInfo) tgInfo.running = true;
   }
 
-  console.log("Gateway ready.");
+  console.log("[gateway] Gateway ready.");
 }
 
 // Graceful shutdown
 async function shutdown(signal: string) {
-  console.log(`\n${signal} received, shutting down...`);
+  console.log(`\n[gateway] ${signal} received, shutting down...`);
   if (telegramAdapter) await telegramAdapter.stop();
   await httpAdapter.stop();
   sessionStore.close();
@@ -108,6 +108,6 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 start().catch((err) => {
-  console.error("Failed to start gateway:", err);
+  console.error("[gateway] Failed to start gateway:", err);
   process.exit(1);
 });

@@ -41,7 +41,12 @@ export class Router {
 
   async handleMessage(message: UnifiedMessage) {
     // Layer 1: Owner verification
-    if (!this.isOwner(message)) return; // silent drop
+    if (!this.isOwner(message)) {
+      console.log(`[router] Dropped msg from ${message.channel}:${message.senderId} (not owner)`);
+      return;
+    }
+    console.log(`[router] Recv ${message.channel}:${message.chatId} "${message.content.text.slice(0, 60)}"`);
+
 
     // Stage media if present
     if (message.content.media?.fileId) {
@@ -239,6 +244,7 @@ export class Router {
   private async sendResponse(response: OutboundResponse, _message: UnifiedMessage) {
     const adapter = this.adapters.get(response.channel);
     if (!adapter) return;
+    console.log(`[router] Send ${response.channel}:${response.chatId} "${response.content.text.slice(0, 60)}"`);
     await adapter.send(response);
   }
 
