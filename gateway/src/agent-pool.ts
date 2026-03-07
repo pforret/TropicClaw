@@ -1,5 +1,7 @@
 import path from "path";
+import { existsSync, readFileSync } from "fs";
 import type { AgentConfig, UnifiedMessage } from "./types.js";
+import { pickModel } from "./model-picker.js";
 
 interface QueueItem {
   agent: AgentConfig;
@@ -56,13 +58,23 @@ export class AgentPool {
   }
 
   private async invokeAgent(agent: AgentConfig, prompt: string): Promise<string> {
+    const pick = pickModel(prompt, agent.model || "sonnet");
+    if (pick.reason) {
+      console.log(`[agent-pool] Model pick: ${pick.model} (reason: ${pick.reason})`);
+    }
+
     const args = [
       "-p", prompt,
       "--output-format", "json",
-      "--model", agent.model || "sonnet",
+      "--model", pick.model,
       "--max-turns", String(agent.max_turns || 20),
       "--dangerously-skip-permissions",
     ];
+
+    const personality = loadPersonality(agent.directory);
+    if (personality) {
+      args.push("--append-system-prompt", personality);
+    }
 
     if (agent.allowed_tools?.length) {
       args.push("--allowedTools", agent.allowed_tools.join(","));
@@ -119,6 +131,22 @@ export class AgentPool {
   queuedCount(): number {
     return this.queue.length;
   }
+}
+
+const PERSONALITY_FILES = ["SOUL.md", "USER.md", "TOOLS.md", "AGENTS.md", "MEMORY.md", "CONTEXT.md", "RULES.md"];
+
+function loadPersonality(agentDir: string): string | null {
+  const sections: string[] = [];
+  for (const filename of PERSONALITY_FILES) {
+    const filePath = path.join(agentDir, filename);
+    if (existsSync(filePath)) {
+      const content = readFileSync(filePath, "utf-8").trim();
+      if (content) {
+        sections.push(`# ${filename}\n\n${content}`);
+      }
+    }
+  }
+  return sections.length ? sections.join("\n\n---\n\n") : null;
 }
 
 function parseClaudeOutput(raw: string): string {

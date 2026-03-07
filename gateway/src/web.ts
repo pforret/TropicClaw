@@ -70,6 +70,7 @@ export function registerWebRoutes(app: FastifyInstance, sessionStore: SessionSto
       { method: "GET", path: "/health", desc: "Health check", web: true },
       { method: "GET", path: "/api/agents", desc: "List agents (JSON)", web: true },
       { method: "GET", path: "/api/sessions", desc: "List sessions (JSON)", web: true },
+      { method: "GET", path: "/api/activity", desc: "Recent activity (JSON, ?limit=N&since=ISO)", web: true },
       { method: "POST", path: "/api/message", desc: "Send message (HTTP adapter)", web: false },
       { method: "POST", path: "/api/deliver", desc: "Deliver output to channel (tropicron)", web: false },
     ];
@@ -423,6 +424,16 @@ export function registerWebRoutes(app: FastifyInstance, sessionStore: SessionSto
     );
   });
 
+  app.get("/api/activity", async (req, reply) => {
+    const limit = Math.min(Number((req.query as any).limit) || 100, 500);
+    const since = (req.query as any).since as string | undefined;
+    let activity = sessionStore.getRecentActivity(limit);
+    if (since) {
+      activity = activity.filter((m) => m.ts > since);
+    }
+    reply.send(activity);
+  });
+
   app.get("/web/activity", async (_req, reply) => {
     const activity = sessionStore.getRecentActivity(100);
 
@@ -431,7 +442,7 @@ export function registerWebRoutes(app: FastifyInstance, sessionStore: SessionSto
         const roleClass = m.role === "user" ? "role-user" : m.role === "assistant" ? "role-assistant" : "role-system";
         const latency = m.latency_ms ? `${m.latency_ms}ms` : "";
         return `
-        <tr class="${roleClass}">
+        <tr class="${roleClass}" data-ts="${esc(m.ts)}">
           <td class="muted">${formatTime(m.ts)}</td>
           <td><a href="/web/agents/${esc(m.agent)}">${esc(m.agent)}</a></td>
           <td>${m.role}</td>
@@ -443,14 +454,92 @@ export function registerWebRoutes(app: FastifyInstance, sessionStore: SessionSto
       })
       .join("");
 
+    const autoRefreshScript = `
+<script>
+(function() {
+  let lastTs = '';
+  const rows = document.querySelectorAll('#activity-body tr[data-ts]');
+  if (rows.length) lastTs = rows[0].dataset.ts;
+
+  const statusEl = document.getElementById('auto-status');
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function truncate(s, max) {
+    return s && s.length > max ? s.slice(0, max) + '...' : (s || '');
+  }
+
+  function formatTime(iso) {
+    const d = new Date(iso);
+    return d.toLocaleString('en-GB', {
+      month: 'short', day: '2-digit', hour: '2-digit',
+      minute: '2-digit', second: '2-digit', hour12: false
+    });
+  }
+
+  function roleClass(role) {
+    return role === 'user' ? 'role-user' : role === 'assistant' ? 'role-assistant' : 'role-system';
+  }
+
+  async function poll() {
+    try {
+      const url = '/api/activity?limit=100' + (lastTs ? '&since=' + encodeURIComponent(lastTs) : '');
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const items = await res.json();
+      if (!items.length) return;
+
+      const tbody = document.getElementById('activity-body');
+      const empty = tbody.querySelector('.empty-row');
+      if (empty) empty.remove();
+
+      for (const m of items) {
+        const tr = document.createElement('tr');
+        tr.className = roleClass(m.role);
+        tr.dataset.ts = m.ts;
+        tr.innerHTML =
+          '<td class="muted">' + esc(formatTime(m.ts)) + '</td>' +
+          '<td><a href="/web/agents/' + esc(m.agent) + '">' + esc(m.agent) + '</a></td>' +
+          '<td>' + m.role + '</td>' +
+          '<td>' + (m.channel ? '<span class="badge">' + esc(m.channel) + '</span>' : '') + '</td>' +
+          '<td>' + (m.source !== 'gateway' ? '<span class="badge badge-alt">' + esc(m.source) + '</span>' : '') + '</td>' +
+          '<td class="msg-text">' + esc(truncate(m.text, 150)) + '</td>' +
+          '<td class="muted">' + (m.latency_ms ? m.latency_ms + 'ms' : '') + '</td>';
+        tr.style.animation = 'fadeIn 0.3s ease-in';
+        tbody.prepend(tr);
+      }
+
+      // keep max 200 rows
+      while (tbody.children.length > 200) tbody.lastChild.remove();
+
+      lastTs = items[items.length - 1].ts;
+      statusEl.textContent = 'Last update: ' + new Date().toLocaleTimeString();
+    } catch(e) {
+      statusEl.textContent = 'Update failed';
+    }
+  }
+
+  setInterval(poll, 3000);
+  statusEl.textContent = 'Auto-updating every 3s';
+})();
+</script>
+<style>
+@keyframes fadeIn { from { opacity: 0; background: rgba(88,166,255,0.1); } to { opacity: 1; background: transparent; } }
+</style>`;
+
     reply.type("text/html").send(
       layout(
         "Activity",
-        `<h1>Recent Activity</h1>
+        `<h1>Recent Activity <span id="auto-status" class="muted" style="font-size:0.7rem; font-weight:400; margin-left:1rem;"></span></h1>
         <table class="activity">
           <thead><tr><th>Time</th><th>Agent</th><th>Role</th><th>Channel</th><th>Source</th><th>Message</th><th>Latency</th></tr></thead>
-          <tbody>${rows || "<tr><td colspan=7 class='muted'>No activity yet</td></tr>"}</tbody>
-        </table>`
+          <tbody id="activity-body">${rows || "<tr class='empty-row'><td colspan=7 class='muted'>No activity yet</td></tr>"}</tbody>
+        </table>
+        ${autoRefreshScript}`
       )
     );
   });
