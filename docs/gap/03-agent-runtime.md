@@ -33,14 +33,14 @@ The Agent Runtime manages conversation state and agent execution:
 
 ## Gaps
 
-| Gap                                | Severity | Notes                                                             |
-|------------------------------------|----------|-------------------------------------------------------------------|
-| No append-only session logs        | ~~MEDIUM~~ → **ADDRESSED** | Addressed by `tropiclog.sh` — hook-based JSON-lines logging |
-| No multi-agent orchestration       | HIGH     | Cannot run multiple agents simultaneously with different personas |
-| No agent-per-channel routing       | HIGH     | No mechanism to route messages from channel X to agent Y          |
-| No dynamic system prompt switching | MEDIUM   | `CLAUDE.md` is static within a session                            |
-| No agent registry                  | MEDIUM   | No way to define, list, and manage multiple agent configurations  |
-| No conversation indexing           | ~~LOW~~ → **PARTIAL** | Keyword search via `tropiclog search`; semantic search still requires Memory MCP |
+| Gap                                | Severity                   | Notes                                                                            |
+|------------------------------------|----------------------------|----------------------------------------------------------------------------------|
+| No append-only session logs        | ~~MEDIUM~~ → **ADDRESSED** | Addressed by `tropiclog.sh` — hook-based JSON-lines logging                      |
+| No multi-agent orchestration       | HIGH                       | Cannot run multiple agents simultaneously with different personas                |
+| No agent-per-channel routing       | HIGH                       | No mechanism to route messages from channel X to agent Y                         |
+| No dynamic system prompt switching | MEDIUM                     | `CLAUDE.md` is static within a session                                           |
+| No agent registry                  | MEDIUM                     | No way to define, list, and manage multiple agent configurations                 |
+| No conversation indexing           | ~~LOW~~ → **PARTIAL**      | Keyword search via `tropiclog search`; semantic search still requires Memory MCP |
 
 ## Build Recommendations
 

@@ -99,7 +99,7 @@ This is the closest Claude Code equivalent to OpenClaw's zero-config `browser.ac
 | Gap                           | Severity | Notes                                                                                                                |
 |-------------------------------|----------|----------------------------------------------------------------------------------------------------------------------|
 | No **built-in** browser tool  | LOW      | Largely addressed by Claude in Chrome (first-party extension); headless automation still requires MCP setup          |
-| No canvas/live HTML rendering | MEDIUM   | No equivalent to OpenClaw's `canvas.eval` — see [Web App Generation](08-web-app-generation.md) for detailed analysis |
+| No canvas/live HTML rendering | MEDIUM   | No equivalent to OpenClaw's `canvas.eval` — see [Web App Generation](09-web-app-generation.md) for detailed analysis |
 | No camera/photo tools         | LOW      | Not typical for CLI agents; could add via MCP                                                                        |
 | No GPS/location tools         | LOW      | Could integrate via MCP with device APIs                                                                             |
 | No sandboxed shell isolation  | MEDIUM   | Bash runs in user's environment; no container isolation                                                              |
@@ -109,7 +109,7 @@ This is the closest Claude Code equivalent to OpenClaw's zero-config `browser.ac
 ## Build Recommendations
 
 1. **Browser automation setup skill** — Create a `/browser-setup` skill or bash script that auto-installs and configures the Playwright MCP server (similar to how `auditlog.sh install` registers hooks). This would close the zero-config gap with OpenClaw's `browser.action`.
-2. **Canvas rendering via MCP** — Build a Canvas MCP server with HTTP + WebSocket for live rendering of agent-generated content. See [Web App Generation gap analysis](08-web-app-generation.md) for detailed design.
+2. **Canvas rendering via MCP** — Build a Canvas MCP server with HTTP + WebSocket for live rendering of agent-generated content. See [Web App Generation gap analysis](09-web-app-generation.md) for detailed design.
 3. **Camera/location via MCP** — If needed, build lightweight MCP servers that interface with device APIs (e.g., `imagesnap` on macOS for camera, CoreLocation for GPS)
 4. **Sandboxed execution** — Use Docker containers or macOS sandbox profiles for tool isolation:
    - MCP servers can run inside containers
@@ -119,4 +119,5 @@ This is the closest Claude Code equivalent to OpenClaw's zero-config `browser.ac
 
 ## Verdict
 
-**GREEN/YELLOW** — Claude Code's tool and skill ecosystem is the closest match to OpenClaw's design. Browser automation is now near-parity: Claude in Chrome provides first-party, near-zero-config browser interaction (comparable to OpenClaw's `browser.action`), while Playwright MCP offers superior headless automation with accessibility trees. The remaining gaps are: no canvas/live HTML rendering (MEDIUM — see [Web App Generation](08-web-app-generation.md) for detailed analysis), and minor items (camera, location, sandboxing) addressable with targeted MCP servers.
+**GREEN/YELLOW** — Claude Code's tool and skill ecosystem is the closest match to OpenClaw's design. Browser automation is now near-parity: Claude in Chrome provides first-party, near-zero-config browser interaction (comparable to OpenClaw's `browser.action`), while Playwright MCP offers superior headless automation with accessibility trees. The remaining gaps are: no canvas/live HTML rendering (MEDIUM — see [Web App Generation](09-web-app-generation.md) for detailed analysis), and minor items (camera, location, sandboxing) addressable with targeted MCP servers.
+
