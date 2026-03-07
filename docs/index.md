@@ -24,13 +24,13 @@ Subsystem-by-subsystem comparison of OpenClaw vs Claude Code. Each page covers w
 
 | # | Subsystem                                          | Verdict                                                                       |
 |---|----------------------------------------------------|--------------------------------------------------------------------|
-| 1 | [Gateway](gap/01-gateway.md)                       | 🟢 **GREEN** (pending) — fully designed in [Gateway PRP](todo/PRPs/2026-03-07-gateway.md) |
-| 2 | [Channels](gap/02-channels.md)                     | 🔴 **RED** — only Slack MCP; Telegram/Slack/Discord designed in Gateway PRP |
-| 3 | [Agent Runtime](gap/03-agent-runtime.md)           | 🟢 **GREEN** (pending) — all gaps designed in Gateway PRP         |
-| 4 | [Tools & Skills](gap/04-tools-skills.md)           | 🟢 **GREEN/YELLOW** — most tools exist natively                   |
+| 1 | [Gateway](gap/01-gateway.md)                       | 🟢 **BUILT** — Bun/Fastify gateway with HTTP API, web dashboard, health checks |
+| 2 | [Channels](gap/02-channels.md)                     | 🟡 **PARTIAL** — Telegram adapter running; Slack/Discord designed but not yet built |
+| 3 | [Agent Runtime](gap/03-agent-runtime.md)           | 🟢 **BUILT** — agent pool, multi-agent with `/switch`, session store, personality files (SOUL.md) |
+| 4 | [Tools & Skills](gap/04-tools-skills.md)           | 🟢 **GREEN** — most tools exist natively                          |
 | 5 | [Memory](gap/05-memory.md)                         | 🟡 **YELLOW** — claude-mem + claude-memory-mcp installed; scoped filtering missing |
-| 6 | [Self-Scheduling](gap/06-self-scheduling.md)       | 🟢 **GREEN** — tropicron: cron, job store, precheck, memory, skill |
-| 7 | [Persona Templates](gap/07-persona-templates.md)   | 🟢 **GREEN/YELLOW** — claude-memory-mcp identity anchors          |
+| 6 | [Self-Scheduling](gap/06-self-scheduling.md)       | 🟢 **BUILT** — tropicron: cron, job store, precheck, per-job memory, shell-only jobs, dreaming |
+| 7 | [Persona Templates](gap/07-persona-templates.md)   | 🟢 **BUILT** — per-agent CLAUDE.md + SOUL.md, agent scaffolding via `/new` |
 | 8 | [Autonomy & Trust](gap/08-autonomy-trust.md)       | 🟢 **GREEN** (pending) — trust tiers 0–3 designed in Gateway PRP  |
 | 9 | [Web App Generation](gap/09-web-app-generation.md) | 🟠 **YELLOW/RED** — can build apps, but no Canvas/A2UI           |
 
@@ -52,14 +52,21 @@ Reference on how Claude Code can be extended via bash scripts, skills, hooks, MC
 
 **What has been built:**
 
-- 🟢 Self-scheduling — tropicron (cron matching, job store, precheck, per-job memory)
+- 🟢 Gateway — Bun/Fastify HTTP server, agent pool, session store (SQLite), health checks, scheduler heartbeat
+- 🟢 Web dashboard — agents, activity (with LLM stats), channels, schedule pages at `/web/*`
+- 🟢 Telegram channel — long-polling adapter with owner verification, voice messages (STT/TTS), media staging
+- 🟢 Agent runtime — multi-agent with `/switch`, `/agents`, `/back`, `/new`; per-agent CLAUDE.md + SOUL.md personality files
+- 🟢 Self-scheduling — tropicron (cron matching, precheck, per-job memory, `run:` shell-only jobs, singleton locks)
+- 🟢 Dreaming — nightly `dream-main` job compresses history and consolidates learnings
 - 🟢 Audit logging — tropiclog (hook-based JSON-lines)
 - 🟢 Memory — claude-mem (Chroma vectors + FTS5) + claude-memory-mcp (identity)
+- 🟢 Verbose dev mode — `gateway.sh dev` shows all gateway/router/agent-pool activity on stderr
 
-**What must be built:**
+**What's next:**
 
-- 🚧 Gateway/orchestrator — [PRP written](todo/PRPs/2026-03-07-gateway.md) (Bun/Fastify, agent pool, sessions, trust)
-- 🚧 Channel adapters — designed in Gateway PRP (Telegram, Slack, Discord)
+- 🚧 Slack adapter — designed, not yet built
+- 🚧 Discord adapter — designed, not yet built
+- 🚧 Trust tiers — 0–3 levels designed in [Gateway PRP](todo/PRPs/2026-03-07-gateway.md)
 - ❌ Canvas/live rendering — no equivalent to OpenClaw's A2UI
 
 ## Links
