@@ -6,7 +6,7 @@ This directory maps each OpenClaw subsystem against Claude Code's native capabil
 
 | # | Subsystem                                      | Verdict              | Key Claude Code Primitives                                    | Biggest Gap                                                    |
 |---|------------------------------------------------|----------------------|---------------------------------------------------------------|----------------------------------------------------------------|
-| 1 | [Gateway](01-gateway.md)                       | **YELLOW**           | Hooks, Settings hierarchy, CLI `-p`, Remote Control           | No programmatic gateway ([PRP written](../todo/PRPs/2026-03-07-gateway.md)) |
+| 1 | [Gateway](01-gateway.md)                       | **YELLOW**           | Hooks, Settings hierarchy, CLI `-p`, Remote Control           | No programmatic gateway ([PRP written](../todo/PRPs/done/2026-03-07-gateway.md)) |
 | 2 | [Channels](02-channels.md)                     | **RED**              | Slack MCP, Remote Control (web/mobile)                        | No adapters for WhatsApp, Telegram, Discord, etc. (Gateway PRP covers Telegram, Slack, Discord) |
 | 3 | [Agent Runtime](03-agent-runtime.md)           | **GREEN** (pending)  | Multi-turn, `CLAUDE.md`, Skills fork, `allowed-tools`, tropiclog | All gaps designed in Gateway PRP; awaiting implementation      |
 | 4 | [Tools & Skills](04-tools-skills.md)           | **GREEN/YELLOW**     | Bash, file tools, WebSearch, Skills, MCP                      | No camera/location, limited sandboxing                         |
@@ -20,7 +20,7 @@ This directory maps each OpenClaw subsystem against Claude Code's native capabil
 
 Based on gap severity and dependency order:
 
-1. **Gateway + channel adapters** — [PRP written](../todo/PRPs/2026-03-07-gateway.md). Bun/Fastify orchestrator with Telegram (Phase 1), Slack (Phase 3), Discord (Phase 4). Addresses gateway, channels, agent runtime, trust tiers.
+1. **Gateway + channel adapters** — [PRP written](../todo/PRPs/done/2026-03-07-gateway.md). Bun/Fastify orchestrator with Telegram (Phase 1), Slack (Phase 3), Discord (Phase 4). Addresses gateway, channels, agent runtime, trust tiers.
 2. **Memory improvements** (YELLOW) — claude-mem and claude-memory-mcp installed; remaining: scoped filtering, lifecycle management
 3. **Canvas/live rendering** (YELLOW/RED) — No equivalent to OpenClaw's Canvas; lowest priority since Claude Code excels at full-stack generation
 4. **Tool extensions** (GREEN/YELLOW) — Most tools already exist; camera/location are niche gaps
@@ -53,7 +53,7 @@ These capabilities require **no custom development**:
 
 | Component                       | Type                   | Status                                         |
 |---------------------------------|------------------------|-------------------------------------------------|
-| Gateway/orchestrator            | Bun/Fastify service    | 📋 [PRP written](../todo/PRPs/2026-03-07-gateway.md) — agent pool, routing, sessions, trust |
+| Gateway/orchestrator            | Bun/Fastify service    | 📋 [PRP written](../todo/PRPs/done/2026-03-07-gateway.md) — agent pool, routing, sessions, trust |
 | Channel adapters                | Gateway adapters       | 📋 Designed in Gateway PRP — Telegram (Phase 2), Slack (Phase 3), Discord (Phase 4) |
 | Agent registry & routing        | Gateway logic          | 📋 Designed — auto-discovery from `agents/*/CLAUDE.md`, `/switch` commands |
 | Message normalization           | Gateway types          | 📋 Designed — `UnifiedMessage` schema in Gateway PRP |

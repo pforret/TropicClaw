@@ -72,3 +72,36 @@ export interface ChannelAdapter {
   sendTyping?(chatId: string): Promise<void>;
   on(event: "message", handler: (msg: UnifiedMessage) => void): void;
 }
+
+/**
+ * An app route matches incoming messages by regex and handles them.
+ * Routes are tested in priority order (lower = first). First match wins.
+ * If no route matches, the message falls through to the LLM agent.
+ */
+export interface AppRoute {
+  /** Unique name for this route (used in /help and logging) */
+  name: string;
+  /** Short description shown in /help */
+  description: string;
+  /** Regex tested against the trimmed message text */
+  pattern: RegExp;
+  /** Lower priority = tested first. Default routes use 100+. Apps should use 50. */
+  priority: number;
+  /** Handle the message. Return an OutboundResponse, or null to fall through to the next route. */
+  handle(
+    match: RegExpMatchArray,
+    message: UnifiedMessage,
+    context: AppRouteContext
+  ): Promise<OutboundResponse | null>;
+}
+
+export interface AppRouteContext {
+  makeResponse(agent: string, message: UnifiedMessage, text: string): OutboundResponse;
+  sessionStore: SessionStore;
+  agentPool: AgentPool;
+  adapters: Map<string, ChannelAdapter>;
+}
+
+// Forward-declare to avoid circular imports — actual classes are in their own files
+import type { SessionStore } from "./session-store.js";
+import type { AgentPool } from "./agent-pool.js";

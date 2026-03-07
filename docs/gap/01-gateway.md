@@ -62,7 +62,7 @@ When a message arrives (e.g., from Telegram):
 
 ## Gateway PRP Design
 
-The [Gateway PRP](../todo/PRPs/2026-03-07-gateway.md) defines a Bun/Fastify orchestration layer that addresses all HIGH gaps. Key design decisions:
+The [Gateway PRP](../todo/PRPs/done/2026-03-07-gateway.md) defines a Bun/Fastify orchestration layer that addresses all HIGH gaps. Key design decisions:
 
 - **Runtime:** Bun (fast startup, native TypeScript, built-in SQLite via `bun:sqlite`, `.env` loading)
 - **HTTP framework:** Fastify (schema-validated routes, better performance than Express)
@@ -106,4 +106,4 @@ crontab (every minute, independent)
 
 ## Verdict
 
-**YELLOW → GREEN (pending implementation)** — All gateway gaps are fully designed in the [Gateway PRP](../todo/PRPs/2026-03-07-gateway.md). Tropicron already addresses scheduling. The verdict upgrades to GREEN once the gateway is implemented.
+**YELLOW → GREEN (pending implementation)** — All gateway gaps are fully designed in the [Gateway PRP](../todo/PRPs/done/2026-03-07-gateway.md). Tropicron already addresses scheduling. The verdict upgrades to GREEN once the gateway is implemented.

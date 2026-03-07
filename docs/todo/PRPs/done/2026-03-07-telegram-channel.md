@@ -5,7 +5,7 @@
 
 ## Objective
 
-Implement the first channel adapter for the TropicClaw gateway: Telegram. This is **Phase 2** of the [Gateway PRP](./2026-03-07-gateway.md), building on the gateway scaffold (Phase 1). The adapter receives Telegram messages via long polling, normalizes them to `UnifiedMessage`, routes through the gateway pipeline, and sends responses back with Telegram MarkdownV2 formatting.
+Implement the first channel adapter for the TropicClaw gateway: Telegram. This is **Phase 2** of the [Gateway PRP](2026-03-07-gateway.md), building on the gateway scaffold (Phase 1). The adapter receives Telegram messages via long polling, normalizes them to `UnifiedMessage`, routes through the gateway pipeline, and sends responses back with Telegram MarkdownV2 formatting.
 
 ### What This PRP Covers
 

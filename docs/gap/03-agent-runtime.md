@@ -64,7 +64,7 @@ Each agent is a **separate folder** in `~/.openclaw/agents/`:
 
 ## Gateway PRP Coverage
 
-The [Gateway PRP](../todo/PRPs/2026-03-07-gateway.md) defines a Bun/Fastify orchestration layer that addresses the remaining agent runtime gaps. Key design decisions:
+The [Gateway PRP](../todo/PRPs/done/2026-03-07-gateway.md) defines a Bun/Fastify orchestration layer that addresses the remaining agent runtime gaps. Key design decisions:
 
 ### Multi-Agent Orchestration
 
@@ -120,10 +120,10 @@ The [Gateway PRP](../todo/PRPs/2026-03-07-gateway.md) defines a Bun/Fastify orch
 
 ## Build Recommendations
 
-1. **Gateway implementation** — The [Gateway PRP](../todo/PRPs/2026-03-07-gateway.md) covers multi-agent orchestration, channel routing, session management, trust enforcement, and agent lifecycle. Implementation in 4 phases: HTTP+agent pool → Telegram → dreaming+Slack → production hardening.
+1. **Gateway implementation** — The [Gateway PRP](../todo/PRPs/done/2026-03-07-gateway.md) covers multi-agent orchestration, channel routing, session management, trust enforcement, and agent lifecycle. Implementation in 4 phases: HTTP+agent pool → Telegram → dreaming+Slack → production hardening.
 2. **Append-only logs via hooks** — ✅ Implemented as tropiclog (see [PRP](../todo/PRPs/done/2026-02-27-tropiclog.md)). Uses `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SessionStart`, `SessionEnd` hooks. CLI provides search, list, stats, export.
 3. **Dreaming (session maintenance)** — Nightly tropicron job per agent: summarize conversations, extract learnings to memory plugins, evolve persona files, compress session history.
 
 ## Verdict
 
-**YELLOW → GREEN (pending implementation)** — Claude Code provides a strong single-agent runtime. All major agent runtime gaps (multi-agent orchestration, channel routing, session isolation, agent registry, dynamic prompts) are now fully designed in the [Gateway PRP](../todo/PRPs/2026-03-07-gateway.md). Tropiclog addresses audit logging. The verdict upgrades to GREEN once the gateway is implemented.
+**YELLOW → GREEN (pending implementation)** — Claude Code provides a strong single-agent runtime. All major agent runtime gaps (multi-agent orchestration, channel routing, session isolation, agent registry, dynamic prompts) are now fully designed in the [Gateway PRP](../todo/PRPs/done/2026-03-07-gateway.md). Tropiclog addresses audit logging. The verdict upgrades to GREEN once the gateway is implemented.

@@ -1,6 +1,13 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs";
 import path from "path";
-import type { UnifiedMessage, OutboundResponse, GatewayConfig, ChannelAdapter } from "./types.js";
+import type {
+  UnifiedMessage,
+  OutboundResponse,
+  GatewayConfig,
+  ChannelAdapter,
+  AppRoute,
+  AppRouteContext,
+} from "./types.js";
 import { SessionStore } from "./session-store.js";
 import { AgentPool } from "./agent-pool.js";
 import { discoverAgents, getAgent } from "./agents.js";
@@ -13,16 +20,35 @@ const TEMPLATES_DIR = path.resolve(import.meta.dir, "..", "templates");
 
 export class Router {
   private adapters: Map<string, ChannelAdapter> = new Map();
+  private routes: AppRoute[] = [];
 
   constructor(
     private config: GatewayConfig,
     private sessionStore: SessionStore,
     private agentPool: AgentPool
-  ) {}
+  ) {
+    this.registerBuiltinRoutes();
+  }
+
+  /** Register an app route. Routes are tested in priority order (lower = first). */
+  registerRoute(route: AppRoute) {
+    this.routes.push(route);
+    this.routes.sort((a, b) => a.priority - b.priority);
+    console.log(`[router] Registered route: ${route.name} (priority ${route.priority}, pattern ${route.pattern})`);
+  }
 
   registerAdapter(adapter: ChannelAdapter) {
     this.adapters.set(adapter.name, adapter);
     adapter.on("message", (msg) => this.handleMessage(msg));
+  }
+
+  private getRouteContext(): AppRouteContext {
+    return {
+      makeResponse: (agent, message, text) => this.makeResponse(agent, message, text),
+      sessionStore: this.sessionStore,
+      agentPool: this.agentPool,
+      adapters: this.adapters,
+    };
   }
 
   private isOwner(message: UnifiedMessage): boolean {
@@ -35,7 +61,7 @@ export class Router {
     };
 
     const expectedId = ownerIds[message.channel];
-    if (!expectedId) return true; // No owner configured for this channel — allow
+    if (!expectedId) return true;
     return message.senderId === expectedId;
   }
 
@@ -47,10 +73,8 @@ export class Router {
     }
     console.log(`[router] Recv ${message.channel}:${message.chatId} "${message.content.text.slice(0, 60)}"`);
 
-
     // Stage media if present
     if (message.content.media?.fileId) {
-      // Telegram: download via adapter
       const adapter = this.adapters.get(message.channel);
       if (adapter && adapter instanceof TelegramAdapter) {
         try {
@@ -69,16 +93,36 @@ export class Router {
 
     const text = message.content.text.trim();
 
-    // Check for /command prefix
-    if (text.startsWith("/")) {
-      const response = await this.handleCommand(text, message);
-      if (response) {
-        await this.sendResponse(response, message);
-        return;
+    // Layer 2: Try registered routes (pattern matching, priority order)
+    const ctx = this.getRouteContext();
+    for (const route of this.routes) {
+      const match = text.match(route.pattern);
+      if (match) {
+        console.log(`[router] Route matched: ${route.name}`);
+        try {
+          const response = await route.handle(match, message, ctx);
+          if (response) {
+            await this.sendResponse(response, message);
+            return;
+          }
+          // handle returned null — fall through to next route
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : "Unknown error";
+          console.error(`[router] Route "${route.name}" error:`, errorMsg);
+          await this.sendResponse(
+            this.makeResponse(route.name, message, `Error: ${errorMsg}`),
+            message
+          );
+          return;
+        }
       }
     }
 
-    // Resolve current agent for this channel
+    // Layer 3: No route matched — dispatch to LLM agent
+    await this.dispatchToAgent(text, message);
+  }
+
+  private async dispatchToAgent(text: string, message: UnifiedMessage) {
     const agentName = this.sessionStore.getCurrentAgent(message.channel, message.chatId);
     const agent = getAgent(agentName);
 
@@ -91,10 +135,8 @@ export class Router {
       return;
     }
 
-    // Log inbound message
     this.sessionStore.logMessage(agentName, "user", text, message.channel);
 
-    // Build prompt with media/voice context
     let prompt = text;
     if (message.content.voice?.isVoice) {
       const dur = message.content.voice.duration;
@@ -102,13 +144,11 @@ export class Router {
     } else if (message.content.media?.localPath) {
       prompt = `[Attached ${message.content.media.type}: ${message.content.media.localPath}] ${text}`;
     } else if (text.startsWith("/voice ")) {
-      prompt = text.slice(7); // Strip /voice prefix
+      prompt = text.slice(7);
     }
 
-    // Determine reply mode
     const replyAs = determineReplyMode(message);
 
-    // Dispatch to agent pool
     const startTime = Date.now();
     console.log(`[router] Dispatching to agent "${agentName}" via claude -p`);
     try {
@@ -116,78 +156,105 @@ export class Router {
       const latencyMs = Date.now() - startTime;
       console.log(`[router] Agent "${agentName}" responded in ${latencyMs}ms (${result.length} chars)`);
 
-      // Log response
       this.sessionStore.logMessage(agentName, "assistant", result, message.channel, "gateway", latencyMs);
 
-      // Send response with reply mode
       const response = this.makeResponse(agentName, message, result);
       response.replyAs = replyAs;
       await this.sendResponse(response, message);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
       console.error(`[router] Agent "${agentName}" error:`, errorMsg);
-      const response = this.makeResponse(agentName, message, `Error: ${errorMsg}`);
-      await this.sendResponse(response, message);
+      await this.sendResponse(
+        this.makeResponse(agentName, message, `Error: ${errorMsg}`),
+        message
+      );
     }
   }
 
-  private async handleCommand(
-    text: string,
-    message: UnifiedMessage
-  ): Promise<OutboundResponse | null> {
-    const parts = text.split(/\s+/);
-    const command = parts[0].toLowerCase();
+  // --- Built-in routes (registered as AppRoute instances) ---
 
-    switch (command) {
-      case "/agents": {
+  private registerBuiltinRoutes() {
+    this.registerRoute({
+      name: "help",
+      description: "Show all available commands and patterns",
+      pattern: /^\/help$/i,
+      priority: 100,
+      handle: async (_match, message, ctx) => {
+        const lines = this.routes.map((r) => `  ${r.pattern.source} — ${r.description}`);
+        lines.push("", "  (anything else) — send to current LLM agent");
+        return ctx.makeResponse("system", message, `Available commands:\n\n${lines.join("\n")}`);
+      },
+    });
+
+    this.registerRoute({
+      name: "agents",
+      description: "List available agents",
+      pattern: /^\/agents$/i,
+      priority: 100,
+      handle: async (_match, message, ctx) => {
         const agents = discoverAgents();
-        const currentAgent = this.sessionStore.getCurrentAgent(message.channel, message.chatId);
+        const currentAgent = ctx.sessionStore.getCurrentAgent(message.channel, message.chatId);
         const lines = agents.map((a) => {
           const current = a.name === currentAgent ? " (current)" : "";
           return `  ${a.name} — ${a.description || "no description"}${current}`;
         });
-        return this.makeResponse("system", message, `Available agents:\n${lines.join("\n")}`);
-      }
+        return ctx.makeResponse("system", message, `Available agents:\n${lines.join("\n")}`);
+      },
+    });
 
-      case "/switch": {
-        const name = parts[1];
-        if (!name) {
-          return this.makeResponse("system", message, "Usage: /switch <agent-name>");
-        }
+    this.registerRoute({
+      name: "switch",
+      description: "Switch to a different agent",
+      pattern: /^\/switch\s+(\S+)$/i,
+      priority: 100,
+      handle: async (match, message, ctx) => {
+        const name = match[1];
         const agent = getAgent(name);
         if (!agent) {
-          return this.makeResponse("system", message, `Agent "${name}" not found. Use /agents to list.`);
+          return ctx.makeResponse("system", message, `Agent "${name}" not found. Use /agents to list.`);
         }
-        this.sessionStore.switchAgent(message.channel, message.chatId, name);
-        return this.makeResponse(name, message, "Ready. What are we working on?");
-      }
+        ctx.sessionStore.switchAgent(message.channel, message.chatId, name);
+        return ctx.makeResponse(name, message, "Ready. What are we working on?");
+      },
+    });
 
-      case "/current": {
-        const current = this.sessionStore.getCurrentAgent(message.channel, message.chatId);
-        return this.makeResponse("system", message, `Current agent: ${current}`);
-      }
+    this.registerRoute({
+      name: "current",
+      description: "Show current agent",
+      pattern: /^\/current$/i,
+      priority: 100,
+      handle: async (_match, message, ctx) => {
+        const current = ctx.sessionStore.getCurrentAgent(message.channel, message.chatId);
+        return ctx.makeResponse("system", message, `Current agent: ${current}`);
+      },
+    });
 
-      case "/back": {
-        const prev = this.sessionStore.getPreviousAgent(message.channel, message.chatId);
+    this.registerRoute({
+      name: "back",
+      description: "Switch to previous agent",
+      pattern: /^\/back$/i,
+      priority: 100,
+      handle: async (_match, message, ctx) => {
+        const prev = ctx.sessionStore.getPreviousAgent(message.channel, message.chatId);
         if (!prev) {
-          return this.makeResponse("system", message, "No previous agent to switch back to.");
+          return ctx.makeResponse("system", message, "No previous agent to switch back to.");
         }
-        this.sessionStore.switchAgent(message.channel, message.chatId, prev);
-        return this.makeResponse(prev, message, "Welcome back.");
-      }
+        ctx.sessionStore.switchAgent(message.channel, message.chatId, prev);
+        return ctx.makeResponse(prev, message, "Welcome back.");
+      },
+    });
 
-      case "/new": {
-        const name = parts[1];
-        if (!name) {
-          return this.makeResponse("system", message, "Usage: /new <name> [description]");
-        }
-        const desc = parts.slice(2).join(" ") || "";
+    this.registerRoute({
+      name: "new",
+      description: "Create a new agent from template",
+      pattern: /^\/new\s+(\S+)(.*)$/i,
+      priority: 100,
+      handle: async (match, message, _ctx) => {
+        const name = match[1];
+        const desc = (match[2] || "").trim();
         return this.scaffoldAgent(name, desc, message);
-      }
-
-      default:
-        return null; // Not a gateway command, pass through to agent
-    }
+      },
+    });
   }
 
   private scaffoldAgent(
@@ -255,9 +322,6 @@ export class Router {
     console.log(`[router] Send ${response.channel}:${response.chatId} "${response.content.text.slice(0, 60)}"`);
     await adapter.send(response);
   }
-
-  // Handle /voice as a non-gateway command (passes through to agent with voice reply)
-  // This is handled in handleMessage prompt building above, not in handleCommand
 
   // Used by tropicron to deliver output to channels
   async deliver(

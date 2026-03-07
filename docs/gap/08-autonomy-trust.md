@@ -41,7 +41,7 @@ Neither is appropriate for a personal AI assistant that runs 24/7, handles multi
 
 ## Gateway PRP: Trust Design
 
-The [Gateway PRP](../todo/PRPs/2026-03-07-gateway.md) defines a concrete trust model that addresses the graduated-tier gap. Key simplifications from the single-user model:
+The [Gateway PRP](../todo/PRPs/done/2026-03-07-gateway.md) defines a concrete trust model that addresses the graduated-tier gap. Key simplifications from the single-user model:
 
 ### Single-User Model
 
@@ -126,4 +126,4 @@ This is a **cross-cutting concern** that affects every other subsystem:
 
 ## Verdict
 
-**YELLOW → GREEN (pending implementation)** — The trust model is now fully designed in the [Gateway PRP](../todo/PRPs/2026-03-07-gateway.md): single-user owner verification, 4-tier graduated permissions, per-agent trust profiles, `PreToolUse` hook enforcement, and tropiclog audit trail. The binary skip-permissions problem is solved by tiered enforcement. Upgrades to GREEN once `trust-enforcer.sh` is implemented.
+**YELLOW → GREEN (pending implementation)** — The trust model is now fully designed in the [Gateway PRP](../todo/PRPs/done/2026-03-07-gateway.md): single-user owner verification, 4-tier graduated permissions, per-agent trust profiles, `PreToolUse` hook enforcement, and tropiclog audit trail. The binary skip-permissions problem is solved by tiered enforcement. Upgrades to GREEN once `trust-enforcer.sh` is implemented.
