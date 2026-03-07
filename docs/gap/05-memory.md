@@ -83,30 +83,65 @@ Long dialogues grow into thousands of tokens. If the agent didn't write importan
 | No compaction-safe memory flush   | MEDIUM   | Claude Code auto-compresses long sessions; no mechanism to flush important context to persistent storage before compression |
 | No daily log convention           | LOW      | No equivalent to OpenClaw's `YYYY-MM-DD.md` daily context files |
 
+## Existing MCP Plugins
+
+Several community MCP servers already address the memory gaps. Two have been installed for TropicClaw:
+
+### Installed: claude-mem (general memory)
+
+- **Package**: `npx -y claude-mem`
+- **Stars**: ~33k on GitHub
+- **Approach**: Hybrid semantic (Chroma vectors) + keyword (SQLite FTS5)
+- **Memory tiers**: 3-layer progressive disclosure (index → timeline → detail), ~10x token savings
+- **Capture**: Automatic via 5 lifecycle hooks (SessionStart, PostToolUse, Stop, etc.)
+- **Stack**: TypeScript, SQLite + Chroma, web viewer on :37777
+- **Install**: `claude mcp add claude-mem -- npx -y claude-mem`
+
+**OpenClaw gap coverage**:
+
+| Gap | Covered? |
+|-----|----------|
+| Vector embeddings | Yes (Chroma) |
+| Semantic search | Yes |
+| BM25/keyword search | Yes (FTS5) |
+| Hybrid search scoring | Yes |
+| Scoped filtering | Partial |
+| Conversation indexing | Yes (auto-capture) |
+| Auto contextual injection | Yes (progressive disclosure) |
+| Compaction-safe flush | Partial (hook-based capture) |
+
+### Other Notable MCP Memory Servers
+
+| Server | Stars | Approach | Standout Feature |
+|--------|-------|----------|------------------|
+| [mcp-memory-service](https://github.com/doobidoo/mcp-memory-service) | ~1.5k | Knowledge graph + BM25 + vector | Typed edges (causes/fixes/contradicts), 5ms retrieval |
+| [mcp-server-qdrant](https://github.com/qdrant/mcp-server-qdrant) | ~1.3k | Qdrant vector DB | Official, production-grade, simple store/find API |
+| [Vector Memory MCP](https://lobehub.com/mcp/cornebidouil-vector-memory-mcp) | — | sqlite-vec + sentence-transformers | Zero external DB dependencies |
+| [Codebase Memory MCP](https://lobehub.com/mcp/normcrandall-codebase-memory-mcp-server) | — | LanceDB + Ollama | Multi-repo scoped memories |
+| [MemCP](https://dev.to/dalimay28/how-i-built-memcp-giving-claude-a-real-memory-15co) | — | Embeddings with auto-fallback | 20x token savings vs raw loading |
+| [mem0 self-hosted](https://dev.to/n3rdh4ck3r/how-to-give-claude-code-persistent-memory-with-a-self-hosted-mem0-mcp-server-h68) | — | Qdrant + Ollama + Neo4j | Full knowledge graph, fully local |
+
 ## Build Recommendations
 
-1. **Vector database via MCP** — Build or integrate an MCP server wrapping a vector DB:
-   - **Lightweight**: ChromaDB, LanceDB, or SQLite-VSS for local/embedded use
-   - **Scalable**: Qdrant, Weaviate, or Pinecone for production
-   - MCP tools: `memory_store`, `memory_search`, `memory_delete`, `memory_list`
-2. **Embedding generation** — Use Claude's or OpenAI's embedding API, or local models (e.g., `sentence-transformers`) for generating vectors
-3. **Hybrid search** — Combine BM25 (via SQLite FTS5 or Tantivy) with vector similarity in the MCP server
-4. **Scoped filtering** — Store metadata (agent, channel, user, timestamp, tags) alongside each memory entry; filter at query time
-5. **Conversation indexing** — Post-session hook that summarizes and indexes the conversation into the memory store
-6. **Auto-injection** — Pre-session hook or `CLAUDE.md` template that queries relevant memories and injects them into the system prompt
+With claude-mem installed, the remaining work is:
+
+1. **Scoped filtering** — Extend or configure claude-mem to filter by agent, channel, user, and time range (needed for multi-agent)
+2. **Memory lifecycle** — Add expiry/deletion policies on top of claude-mem's storage
+3. **Daily log convention** — Adopt `YYYY-MM-DD.md` convention; hook into claude-mem's SessionEnd to auto-generate
+4. **Conversation indexing** — claude-mem's auto-capture covers this; verify coverage depth
+5. **Compaction-safe flush** — Add a pre-compaction hook to persist critical context to claude-mem before Claude Code's auto-compression
 
 ### Suggested Architecture
 
 ```
-┌────────-─────┐     MCP      ┌──────────────────┐
-│ Claude Code  │◄────────────►│  memory-mcp      │
-│  (agent)     │              │  ├─ embeddings   │
-└──────────-───┘              │  ├─ vector store │
-                              │  ├─ BM25 index   │
-                              │  └─ metadata DB  │
-                              └──────────────────┘
+┌────────────────┐     MCP      ┌──────────────────┐
+│ Claude Code    │◄────────────►│  claude-mem      │
+│  (agent)       │              │  ├─ Chroma (vec) │
+└────────────────┘              │  ├─ SQLite FTS5  │
+                                │  └─ web viewer   │
+                                └──────────────────┘
 ```
 
 ## Verdict
 
-**RED** — The memory subsystem is the widest gap. Claude Code's file-based memory (`CLAUDE.md`, auto-memory) provides basic persistence but none of the semantic search, hybrid retrieval, or scoped filtering that OpenClaw requires. A dedicated memory MCP server must be built, likely the highest-priority custom component.
+**YELLOW** — With claude-mem installed, the memory subsystem moves from RED to YELLOW. Hybrid semantic+keyword search, auto-capture via hooks, and progressive disclosure are now available. Remaining gaps are scoped filtering (multi-agent/channel), memory lifecycle management, and compaction-safe flushing.

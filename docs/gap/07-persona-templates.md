@@ -116,18 +116,58 @@ Every time the agent runs, Gateway reads AGENTS.md, SOUL.md, USER.md, IDENTITY.m
 | No heartbeat checklist | LOW | No `HEARTBEAT.md` for periodic verification tasks. Could be adopted with cronbot |
 | No bootstrap injection mechanism | MEDIUM | `CLAUDE.md` is always loaded, but no control over which files are "bootstrap" (always injected) vs "on-demand" (semantic search). OpenClaw distinguishes these explicitly |
 
+## Existing MCP Plugin
+
+### Installed: claude-memory-mcp (identity persistence)
+
+- **Package**: `npx -y @whenmoon-afk/memory-mcp`
+- **Stars**: ~59 on GitHub
+- **Approach**: File-based identity persistence with promotion scoring
+- **Install**: `claude mcp add identity -- npx -y @whenmoon-afk/memory-mcp`
+
+**Identity structure** (maps closely to OpenClaw templates):
+
+| claude-memory-mcp file | OpenClaw equivalent |
+|------------------------|---------------------|
+| `soul.md` | `SOUL.md` — core values and behavioral truths |
+| `self-state.md` | `YYYY-MM-DD.md` — last 5 sessions of recent history |
+| `identity-anchors.md` | `IDENTITY.md` — promoted patterns that define the agent |
+| `observations.json` | `MEMORY.md` — frequency-tracked concepts |
+
+**Three tools**:
+- `reflect` — End-of-session analysis; auto-promotes frequently observed concepts
+- `anchor` — Explicit identity writing to soul, self-state, or anchors
+- `self` — Queries current identity state and observation scores
+
+**Promotion algorithm**: `score = sqrt(recalls) * log2(days + 1) * diversity_bonus * recency`
+Concepts automatically graduate to anchors when scoring crosses threshold; stale observations auto-prune after 30 days.
+
+**Key properties**: Zero network calls, zero external dependencies, MIT license, optional zero-context-token mode via hooks-only.
+
+**OpenClaw gap coverage**:
+
+| Gap | Covered? |
+|-----|----------|
+| No structured identity schema | Yes — soul.md + identity-anchors.md |
+| No explicit user model | No — focuses on agent identity, not user |
+| No separation of soul/identity/tools | Yes — separate files per concern |
+| No per-agent persona scoping | Partial — one identity set per install |
+| No template evolution tracking | Yes — promotion scoring tracks concept evolution |
+
 ## Build Recommendations
 
-1. **Adopt the template convention directly** — Create `IDENTITY.md`, `SOUL.md`, `USER.md`, and `TOOLS.md` files in the project root and reference them from `CLAUDE.md` via includes or explicit instructions ("Read SOUL.md for behavioral guidelines"). Claude Code will read them when referenced.
+With claude-memory-mcp installed, the remaining work is:
+
+1. **Adopt the template convention** — Create `USER.md` and `TOOLS.md` alongside the identity plugin's files. Reference them from `CLAUDE.md`.
 
 2. **Structured auto-memory** — Define a schema for `memory/user.md` that mirrors USER.md's fields (name, timezone, preferences, projects). Instruct the agent in `CLAUDE.md` to maintain this structure.
 
-3. **TOOLS.md as MCP config companion** — Store device/infrastructure mappings in a `TOOLS.md` that the agent reads alongside MCP server configs. This separates "how to call the tool" (MCP) from "which device to target" (TOOLS.md).
+3. **TOOLS.md as MCP config companion** — Store device/infrastructure mappings in a `TOOLS.md` that the agent reads alongside MCP server configs.
 
-4. **Multi-persona via project directories** — For multiple agent personas, use separate project directories each with their own `CLAUDE.md` + template files. The gateway can route to the correct project based on channel or user.
+4. **Multi-persona via project directories** — For multiple agent personas, use separate project directories each with their own `CLAUDE.md` + identity plugin instance.
 
-5. **Template versioning** — Keep template files in git to track identity evolution. The agent can read git history to understand how its own personality has changed.
+5. **Template versioning** — Keep template files in git to track identity evolution.
 
 ## Verdict
 
-**YELLOW** — Claude Code's `CLAUDE.md` and auto-memory cover much of the functionality, but in an unstructured, monolithic way. The key gaps are: no structured schemas (identity, user, tools are all mixed), no per-agent persona scoping, and no device/infrastructure registry. Adopting OpenClaw's template convention on top of Claude Code is straightforward and requires no custom tooling — just file conventions and `CLAUDE.md` instructions.
+**GREEN/YELLOW** — With claude-memory-mcp installed, the core identity persistence gap is addressed. The plugin provides structured soul/identity/anchors separation that maps directly to OpenClaw's template convention. Remaining gaps are: no structured user model (USER.md), no device registry (TOOLS.md), and no multi-agent persona scoping. These can be addressed by file conventions without custom tooling.
