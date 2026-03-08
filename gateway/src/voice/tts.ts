@@ -25,12 +25,15 @@ export async function synthesizeSpeech(text: string, outputPath: string): Promis
   }
 
   const aiffPath = outputPath.replace(/\.\w+$/, ".aiff");
+  const t0 = Date.now();
+  console.log(`[tts] TTS started: "${text.slice(0, 80)}..." (voice: ${TTS_VOICE})`);
 
   // macOS say -> AIFF
   await $`say -v ${TTS_VOICE} -o ${aiffPath} ${text}`.quiet();
 
   // Convert to OGG Opus for Telegram
   await $`ffmpeg -y -i ${aiffPath} -c:a libopus -b:a 48k ${outputPath}`.quiet();
+  console.log(`[tts] TTS done in ${Date.now() - t0}ms: ${outputPath}`);
 
   // Cleanup temp file
   try {

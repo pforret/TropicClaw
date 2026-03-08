@@ -64,8 +64,8 @@ export class BookmarkService {
     let imagePath: string | null = null;
     if (meta.image) {
       try {
-        const ext = meta.image.split(".").pop()?.split("?")[0] || "jpg";
-        const filename = `${Date.now()}.${ext.slice(0, 4)}`;
+        const ext = (meta.image.split(".").pop()?.split("?")[0] || "jpg").replace(/[^a-zA-Z0-9]/g, "");
+        const filename = `${Date.now()}.${ext.slice(0, 4) || "jpg"}`;
         imagePath = path.join(MEDIA_DIR, filename);
         await downloadFile(meta.image, imagePath);
       } catch {

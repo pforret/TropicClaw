@@ -30,9 +30,15 @@ export function registerBookmarkRoutes(router: Router, bookmarkService: Bookmark
           lines.push("", `Published to: ${bookmark.publishedTo.join(", ")}`);
         }
 
-        const response = ctx.makeResponse("bookmarks", message, lines.join("\n"));
+        const fullText = lines.join("\n");
+        const response = ctx.makeResponse("bookmarks", message, fullText);
 
         if (bookmark.imagePath) {
+          // Telegram caption limit is 1024 chars — truncate if sending with image
+          const caption = fullText.length > 1000
+            ? `**${bookmark.title}**\n\n${bookmark.summaryShort}\n\n${bookmark.url}`
+            : fullText;
+          response.content.text = caption;
           response.content.media = { type: "image", localPath: bookmark.imagePath };
         }
 

@@ -2,6 +2,7 @@ import path from "path";
 import { existsSync, readFileSync } from "fs";
 import type { AgentConfig, UnifiedMessage } from "./types.js";
 import { pickModel } from "./model-picker.js";
+import { buildChannelContext } from "./channel-context.js";
 
 interface QueueItem {
   agent: AgentConfig;
@@ -40,7 +41,7 @@ export class AgentPool {
     }
 
     const key = `${agent.name}-${Date.now()}`;
-    const promise = this.invokeAgent(agent, prompt);
+    const promise = this.invokeAgent(agent, prompt, message);
     this.running.set(key, promise);
 
     try {
@@ -57,7 +58,7 @@ export class AgentPool {
     this.dispatch(item.agent, item.prompt).then(item.resolve, item.reject);
   }
 
-  private async invokeAgent(agent: AgentConfig, prompt: string): Promise<string> {
+  private async invokeAgent(agent: AgentConfig, prompt: string, message?: UnifiedMessage): Promise<string> {
     const pick = pickModel(prompt, agent.model || "sonnet");
     if (pick.reason) {
       console.log(`[agent-pool] Model pick: ${pick.model} (reason: ${pick.reason})`);
@@ -71,9 +72,20 @@ export class AgentPool {
       "--dangerously-skip-permissions",
     ];
 
+    // Build system prompt: personality + channel context
+    const systemParts: string[] = [];
+
     const personality = loadPersonality(agent.directory);
     if (personality) {
-      args.push("--append-system-prompt", personality);
+      systemParts.push(personality);
+    }
+
+    if (message) {
+      systemParts.push(buildChannelContext(message));
+    }
+
+    if (systemParts.length) {
+      args.push("--append-system-prompt", systemParts.join("\n\n---\n\n"));
     }
 
     if (agent.allowed_tools?.length) {

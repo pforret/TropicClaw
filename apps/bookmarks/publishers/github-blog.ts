@@ -4,14 +4,18 @@ import type { Publisher, PublishPayload } from "./twitter.js";
 
 const PUBLISH_DIR = path.resolve(import.meta.dir, "..", "publish");
 const CONTENT_DIR = "src/content/blog";
+const PUBLIC_IMG_DIR = "public/bookmarks";
 
 export class GitHubBlogPublisher implements Publisher {
   readonly name = "github-blog";
   private contentPath: string;
+  private publicImgPath: string;
 
   constructor() {
     this.contentPath = path.join(PUBLISH_DIR, CONTENT_DIR);
+    this.publicImgPath = path.join(PUBLISH_DIR, PUBLIC_IMG_DIR);
     mkdirSync(this.contentPath, { recursive: true });
+    mkdirSync(this.publicImgPath, { recursive: true });
   }
 
   async publish(payload: PublishPayload): Promise<void> {
@@ -25,24 +29,28 @@ export class GitHubBlogPublisher implements Publisher {
       return;
     }
 
+    // Copy image to public/ so it's served as a static asset
+    let heroImageUrl: string | null = null;
+    if (payload.imagePath) {
+      const imgFilename = path.basename(payload.imagePath);
+      const imgDest = path.join(this.publicImgPath, imgFilename);
+      await Bun.write(imgDest, Bun.file(payload.imagePath));
+      heroImageUrl = `/bookmarks/${imgFilename}`;
+    }
+
     const frontmatter = [
       "---",
       `title: "${payload.title.replace(/"/g, '\\"')}"`,
       `description: "${payload.summaryShort.replace(/"/g, '\\"')}"`,
       `pubDate: "${new Date().toISOString()}"`,
       `url: "${payload.url}"`,
-      payload.imagePath ? `heroImage: "./${path.basename(payload.imagePath)}"` : null,
+      heroImageUrl ? `heroImage: "${heroImageUrl}"` : null,
       "---",
     ]
       .filter(Boolean)
       .join("\n");
 
     const content = `${frontmatter}\n\n${payload.summaryLong}\n\n[Read more](${payload.url})\n`;
-
-    if (payload.imagePath) {
-      const imgDest = path.join(this.contentPath, path.basename(payload.imagePath));
-      await Bun.write(imgDest, Bun.file(payload.imagePath));
-    }
 
     await Bun.write(filepath, content);
 
