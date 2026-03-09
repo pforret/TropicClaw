@@ -71,10 +71,16 @@ export class BookmarkService {
     let imagePath: string | null = null;
     let imagePaths: string[] = [];
 
+    let transcript = "";
     if (isYouTubeUrl(url)) {
-      // Download video → 10-frame GIF
-      imagePaths = await fetchYouTubeGif(url, MEDIA_DIR);
+      // Download video → 10-frame GIF + transcript in parallel
+      const [gifPaths, subs] = await Promise.all([
+        fetchYouTubeGif(url, MEDIA_DIR),
+        fetchYouTubeTranscript(url),
+      ]);
+      imagePaths = gifPaths;
       imagePath = imagePaths[0] || null;
+      transcript = subs;
     } else if (isInstagramUrl(url)) {
       // Use yt-dlp for Instagram posts/reels
       imagePaths = await fetchInstagramMedia(url, MEDIA_DIR);
@@ -102,7 +108,7 @@ export class BookmarkService {
     let summaryShort = meta.description.slice(0, 140);
     let summaryLong = meta.description;
     try {
-      const summaries = await this.generateSummaries(url, meta.title, meta.description, bodyText || meta.bodyText);
+      const summaries = await this.generateSummaries(url, meta.title, meta.description, transcript || bodyText || meta.bodyText);
       summaryShort = summaries.short;
       summaryLong = summaries.long;
     } catch (err) {
@@ -495,4 +501,66 @@ async function fetchYouTubeGif(url: string, destDir: string): Promise<string[]> 
 
   console.log(`[bookmark] YouTube: GIF created at ${gifPath}`);
   return [gifPath];
+}
+
+async function fetchYouTubeTranscript(url: string): Promise<string> {
+  const { readdirSync, readFileSync, unlinkSync } = await import("fs");
+  const subdir = path.join(MEDIA_DIR, `yt-subs-${Date.now()}`);
+  mkdirSync(subdir, { recursive: true });
+
+  // Use yt-dlp to download subtitles (auto-generated or manual)
+  const proc = Bun.spawn(
+    [
+      "yt-dlp",
+      "--skip-download",
+      "--write-subs",
+      "--write-auto-subs",
+      "--sub-langs", "en.*,en",
+      "--sub-format", "vtt",
+      "--convert-subs", "srt",
+      "-o", path.join(subdir, "subs.%(ext)s"),
+      url,
+    ],
+    { stdout: "pipe", stderr: "pipe" }
+  );
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    const stderr = await new Response(proc.stderr).text();
+    console.warn(`[bookmark] YouTube transcript: yt-dlp failed (${stderr.split("\n").pop()?.trim()})`);
+    return "";
+  }
+
+  // Find the .srt file
+  const srtFiles = readdirSync(subdir).filter((f: string) => f.endsWith(".srt"));
+  if (srtFiles.length === 0) {
+    console.warn("[bookmark] YouTube transcript: no subtitle files found");
+    return "";
+  }
+
+  const raw = readFileSync(path.join(subdir, srtFiles[0]), "utf-8");
+
+  // Cleanup subtitle files
+  for (const f of readdirSync(subdir)) {
+    try { unlinkSync(path.join(subdir, f)); } catch {}
+  }
+  try { const { rmdirSync } = await import("fs"); rmdirSync(subdir); } catch {}
+
+  // Strip SRT formatting: remove sequence numbers, timestamps, and duplicate lines
+  const lines: string[] = [];
+  let prev = "";
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    // Skip sequence numbers, timestamps, and empty lines
+    if (!trimmed || /^\d+$/.test(trimmed) || /^\d{2}:\d{2}/.test(trimmed)) continue;
+    // Strip inline tags like <font> and VTT positioning
+    const clean = trimmed.replace(/<[^>]+>/g, "").trim();
+    if (clean && clean !== prev) {
+      lines.push(clean);
+      prev = clean;
+    }
+  }
+
+  const transcript = lines.join(" ").slice(0, 5000);
+  console.log(`[bookmark] YouTube transcript: extracted ${transcript.length} chars`);
+  return transcript;
 }
