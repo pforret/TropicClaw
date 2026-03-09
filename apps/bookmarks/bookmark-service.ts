@@ -399,9 +399,15 @@ function isInstagramUrl(url: string): boolean {
   return /^https?:\/\/(www\.)?instagram\.com\/(p|reel|reels)\//.test(url);
 }
 
+function extractInstagramId(url: string): string | null {
+  const m = url.match(/instagram\.com\/(?:p|reel|reels)\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
 async function fetchInstagramMedia(url: string, destDir: string): Promise<string[]> {
   const { readdirSync } = await import("fs");
-  const subdir = path.join(destDir, `ig-${Date.now()}`);
+  const igId = extractInstagramId(url) || `ig-${Date.now()}`;
+  const subdir = path.join(destDir, igId);
   mkdirSync(subdir, { recursive: true });
 
   const proc = Bun.spawn(
@@ -445,12 +451,11 @@ async function fetchYouTubeGif(url: string, destDir: string): Promise<string[]> 
   const subdir = path.join(destDir, `yt-${Date.now()}`);
   mkdirSync(subdir, { recursive: true });
 
-  const videoPath = path.join(subdir, "video.mp4");
-  const gifPath = path.join(subdir, "preview.gif");
-  const thumbPath = path.join(subdir, "thumbnail.jpg");
-
-  // Always download the YouTube thumbnail as fallback
   const videoId = extractYouTubeId(url);
+  const slug = videoId || `yt-${Date.now()}`;
+  const videoPath = path.join(subdir, "video.mp4");
+  const gifPath = path.join(subdir, `${slug}.gif`);
+  const thumbPath = path.join(subdir, `${slug}.jpg`);
   if (videoId) {
     for (const res of ["maxresdefault", "sddefault", "hqdefault"]) {
       try {
