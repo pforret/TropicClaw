@@ -65,6 +65,7 @@ export class AgentPool {
     }
 
     const args = [
+      "--continue",
       "-p", prompt,
       "--output-format", "json",
       "--model", pick.model,

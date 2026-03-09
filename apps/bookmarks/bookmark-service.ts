@@ -15,6 +15,7 @@ export interface Bookmark {
   summaryLong: string;
   imageUrl: string | null;
   imagePath: string | null;
+  imagePaths: string[];
   publishedTo: string[];
   createdAt: string;
 }
@@ -47,6 +48,12 @@ export class BookmarkService {
       CREATE INDEX IF NOT EXISTS idx_bookmarks_url ON bookmarks(url);
       CREATE INDEX IF NOT EXISTS idx_bookmarks_created ON bookmarks(created_at);
     `);
+    // Add image_paths column if missing (migration for existing DBs)
+    try {
+      this.db.exec("ALTER TABLE bookmarks ADD COLUMN image_paths TEXT DEFAULT '[]'");
+    } catch {
+      // Column already exists
+    }
   }
 
   async process(url: string): Promise<Bookmark> {
@@ -60,14 +67,25 @@ export class BookmarkService {
       fetchBodyViaJina(url),
     ]);
 
-    // Download image
+    // Download media
     let imagePath: string | null = null;
-    if (meta.image) {
+    let imagePaths: string[] = [];
+
+    if (isYouTubeUrl(url)) {
+      // Download video → 10-frame GIF
+      imagePaths = await fetchYouTubeGif(url, MEDIA_DIR);
+      imagePath = imagePaths[0] || null;
+    } else if (isInstagramUrl(url)) {
+      // Use yt-dlp for Instagram posts/reels
+      imagePaths = await fetchInstagramMedia(url, MEDIA_DIR);
+      imagePath = imagePaths[0] || null;
+    } else if (meta.image) {
       try {
         const ext = (meta.image.split(".").pop()?.split("?")[0] || "jpg").replace(/[^a-zA-Z0-9]/g, "");
         const filename = `${Date.now()}.${ext.slice(0, 4) || "jpg"}`;
         imagePath = path.join(MEDIA_DIR, filename);
         await downloadFile(meta.image, imagePath);
+        imagePaths = [imagePath];
       } catch {
         imagePath = null;
       }
@@ -75,9 +93,9 @@ export class BookmarkService {
 
     // Store initial bookmark (before summary)
     const stmt = this.db.prepare(
-      "INSERT INTO bookmarks (url, title, description, image_url, image_path) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO bookmarks (url, title, description, image_url, image_path, image_paths) VALUES (?, ?, ?, ?, ?, ?)"
     );
-    const result = stmt.run(url, meta.title, meta.description, meta.image, imagePath);
+    const result = stmt.run(url, meta.title, meta.description, meta.image, imagePath, JSON.stringify(imagePaths));
     const bookmarkId = Number(result.lastInsertRowid);
 
     // Generate AI summaries
@@ -107,6 +125,7 @@ export class BookmarkService {
           summaryShort,
           summaryLong,
           imagePath,
+          imagePaths,
         });
         publishedTo.push(publisher.name);
       } catch (err) {
@@ -129,6 +148,7 @@ export class BookmarkService {
       summaryLong,
       imageUrl: meta.image,
       imagePath,
+      imagePaths,
       publishedTo,
       createdAt: new Date().toISOString(),
     };
@@ -216,6 +236,7 @@ Respond with ONLY valid JSON, no markdown fences:
       summaryLong: row.summary_long,
       imageUrl: row.image_url,
       imagePath: row.image_path,
+      imagePaths: JSON.parse(row.image_paths || "[]"),
       publishedTo: JSON.parse(row.published_to || "[]"),
       createdAt: row.created_at,
     };
@@ -352,4 +373,126 @@ async function downloadFile(url: string, destPath: string): Promise<void> {
   if (!response.ok) throw new Error(`Download failed: ${response.status}`);
   const buffer = await response.arrayBuffer();
   await Bun.write(destPath, buffer);
+}
+
+function isInstagramUrl(url: string): boolean {
+  return /^https?:\/\/(www\.)?instagram\.com\/(p|reel|reels)\//.test(url);
+}
+
+async function fetchInstagramMedia(url: string, destDir: string): Promise<string[]> {
+  const { readdirSync } = await import("fs");
+  const subdir = path.join(destDir, `ig-${Date.now()}`);
+  mkdirSync(subdir, { recursive: true });
+
+  const proc = Bun.spawn(
+    [
+      "yt-dlp",
+      "--cookies-from-browser", "chrome",
+      "--write-thumbnail",
+      "--convert-thumbnails", "jpg",
+      "-o", path.join(subdir, "%(autonumber)s.%(ext)s"),
+      url,
+    ],
+    { stdout: "pipe", stderr: "pipe" }
+  );
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    const stderr = await new Response(proc.stderr).text();
+    console.error(`[bookmark] yt-dlp failed (exit ${exitCode}): ${stderr}`);
+  }
+
+  // Collect all image files downloaded
+  const files = readdirSync(subdir)
+    .filter((f: string) => /\.(jpg|jpeg|png|webp)$/i.test(f))
+    .sort()
+    .map((f: string) => path.join(subdir, f));
+
+  console.log(`[bookmark] Instagram media: ${files.length} image(s) downloaded`);
+  return files;
+}
+
+function isYouTubeUrl(url: string): boolean {
+  return /^https?:\/\/(www\.)?(youtube\.com\/watch|youtu\.be\/|youtube\.com\/shorts\/)/.test(url);
+}
+
+function extractYouTubeId(url: string): string | null {
+  const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/))([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+async function fetchYouTubeGif(url: string, destDir: string): Promise<string[]> {
+  const { unlinkSync, existsSync } = await import("fs");
+  const subdir = path.join(destDir, `yt-${Date.now()}`);
+  mkdirSync(subdir, { recursive: true });
+
+  const videoPath = path.join(subdir, "video.mp4");
+  const gifPath = path.join(subdir, "preview.gif");
+  const thumbPath = path.join(subdir, "thumbnail.jpg");
+
+  // Always download the YouTube thumbnail as fallback
+  const videoId = extractYouTubeId(url);
+  if (videoId) {
+    for (const res of ["maxresdefault", "sddefault", "hqdefault"]) {
+      try {
+        await downloadFile(`https://img.youtube.com/vi/${videoId}/${res}.jpg`, thumbPath);
+        console.log(`[bookmark] YouTube: thumbnail downloaded (${res})`);
+        break;
+      } catch {}
+    }
+  }
+
+  // Try to download video for GIF
+  console.log(`[bookmark] YouTube: downloading video for GIF...`);
+  const dl = Bun.spawn(
+    ["yt-dlp", "--cookies-from-browser", "chrome", "-f", "worstvideo[ext=mp4]/worst[ext=mp4]/worst", "--no-playlist", "-o", videoPath, url],
+    { stdout: "pipe", stderr: "pipe" }
+  );
+  const dlExit = await dl.exited;
+  if (dlExit !== 0) {
+    const stderr = await new Response(dl.stderr).text();
+    console.warn(`[bookmark] YouTube: video download failed, using thumbnail. (${stderr.split("\n").pop()?.trim()})`);
+    return existsSync(thumbPath) ? [thumbPath] : [];
+  }
+
+  // Get video duration
+  const probe = Bun.spawn(
+    ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", videoPath],
+    { stdout: "pipe", stderr: "pipe" }
+  );
+  await probe.exited;
+  const duration = parseFloat((await new Response(probe.stdout).text()).trim()) || 0;
+  if (duration <= 0) {
+    console.warn("[bookmark] YouTube: could not determine duration, using thumbnail");
+    try { unlinkSync(videoPath); } catch {}
+    return existsSync(thumbPath) ? [thumbPath] : [];
+  }
+
+  // Extract 10 evenly spaced frames and assemble into GIF
+  const interval = duration / 10;
+  console.log(`[bookmark] YouTube: creating GIF from ${duration.toFixed(1)}s video (1 frame every ${interval.toFixed(1)}s)`);
+  const ff = Bun.spawn(
+    [
+      "ffmpeg", "-y", "-i", videoPath,
+      "-vf", `fps=1/${interval},scale=480:-1:flags=lanczos`,
+      "-frames:v", "10",
+      "-loop", "0",
+      gifPath,
+    ],
+    { stdout: "pipe", stderr: "pipe" }
+  );
+  const ffExit = await ff.exited;
+
+  // Cleanup video
+  try { unlinkSync(videoPath); } catch {}
+
+  if (ffExit !== 0) {
+    console.warn("[bookmark] YouTube: GIF creation failed, using thumbnail");
+    return existsSync(thumbPath) ? [thumbPath] : [];
+  }
+
+  // Cleanup thumbnail since we have the GIF
+  try { unlinkSync(thumbPath); } catch {}
+
+  console.log(`[bookmark] YouTube: GIF created at ${gifPath}`);
+  return [gifPath];
 }

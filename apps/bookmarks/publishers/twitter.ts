@@ -6,6 +6,7 @@ export interface PublishPayload {
   summaryShort: string;
   summaryLong: string;
   imagePath: string | null;
+  imagePaths?: string[];
 }
 
 export interface Publisher {

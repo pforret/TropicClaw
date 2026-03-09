@@ -29,13 +29,18 @@ export class GitHubBlogPublisher implements Publisher {
       return;
     }
 
-    // Copy image to public/ so it's served as a static asset
+    // Copy images to public/ so they're served as static assets
     let heroImageUrl: string | null = null;
-    if (payload.imagePath) {
-      const imgFilename = path.basename(payload.imagePath);
+    const allImageUrls: string[] = [];
+    const sources = payload.imagePaths?.length ? payload.imagePaths : payload.imagePath ? [payload.imagePath] : [];
+
+    for (const imgPath of sources) {
+      const imgFilename = path.basename(imgPath);
       const imgDest = path.join(this.publicImgPath, imgFilename);
-      await Bun.write(imgDest, Bun.file(payload.imagePath));
-      heroImageUrl = `/bookmarks/${imgFilename}`;
+      await Bun.write(imgDest, Bun.file(imgPath));
+      const publicUrl = `/bookmarks/${imgFilename}`;
+      allImageUrls.push(publicUrl);
+      if (!heroImageUrl) heroImageUrl = publicUrl;
     }
 
     const frontmatter = [
@@ -50,7 +55,13 @@ export class GitHubBlogPublisher implements Publisher {
       .filter(Boolean)
       .join("\n");
 
-    const content = `${frontmatter}\n\n${payload.summaryLong}\n\n[Read more](${payload.url})\n`;
+    // Build image gallery markdown for extra images (beyond hero)
+    const extraImages = allImageUrls.slice(1);
+    const galleryMd = extraImages.length
+      ? "\n\n" + extraImages.map((u, i) => `![image ${i + 2}](${u})`).join("\n\n")
+      : "";
+
+    const content = `${frontmatter}\n\n${payload.summaryLong}${galleryMd}\n\n[Read more](${payload.url})\n`;
 
     await Bun.write(filepath, content);
 
