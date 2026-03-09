@@ -6,6 +6,8 @@ import type { Publisher } from "./publishers/twitter.js";
 
 const MEDIA_DIR = path.resolve(import.meta.dir, "media");
 
+export type VideoCategory = "music_video" | "dj_mix" | "trailer" | "cooking" | "other";
+
 export interface Bookmark {
   id: number;
   url: string;
@@ -16,6 +18,7 @@ export interface Bookmark {
   imageUrl: string | null;
   imagePath: string | null;
   imagePaths: string[];
+  tags: string[];
   publishedTo: string[];
   createdAt: string;
 }
@@ -54,6 +57,11 @@ export class BookmarkService {
     } catch {
       // Column already exists
     }
+    try {
+      this.db.exec("ALTER TABLE bookmarks ADD COLUMN tags TEXT DEFAULT '[]'");
+    } catch {
+      // Column already exists
+    }
   }
 
   async process(url: string): Promise<Bookmark> {
@@ -72,15 +80,18 @@ export class BookmarkService {
     let imagePaths: string[] = [];
 
     let transcript = "";
+    let tags: string[] = [];
     if (isYouTubeUrl(url)) {
-      // Download video → 10-frame GIF + transcript in parallel
-      const [gifPaths, subs] = await Promise.all([
+      // Download video → 10-frame GIF + transcript + classification in parallel
+      const [gifPaths, subs, category] = await Promise.all([
         fetchYouTubeGif(url, MEDIA_DIR),
         fetchYouTubeTranscript(url),
+        classifyYouTubeVideo(url),
       ]);
       imagePaths = gifPaths;
       imagePath = imagePaths[0] || null;
       transcript = subs;
+      tags = ["youtube", category];
     } else if (isInstagramUrl(url)) {
       // Use yt-dlp for Instagram posts/reels
       imagePaths = await fetchInstagramMedia(url, MEDIA_DIR);
@@ -99,9 +110,9 @@ export class BookmarkService {
 
     // Store initial bookmark (before summary)
     const stmt = this.db.prepare(
-      "INSERT INTO bookmarks (url, title, description, image_url, image_path, image_paths) VALUES (?, ?, ?, ?, ?, ?)"
+      "INSERT INTO bookmarks (url, title, description, image_url, image_path, image_paths, tags) VALUES (?, ?, ?, ?, ?, ?, ?)"
     );
-    const result = stmt.run(url, meta.title, meta.description, meta.image, imagePath, JSON.stringify(imagePaths));
+    const result = stmt.run(url, meta.title, meta.description, meta.image, imagePath, JSON.stringify(imagePaths), JSON.stringify(tags));
     const bookmarkId = Number(result.lastInsertRowid);
 
     // Generate AI summaries
@@ -132,6 +143,7 @@ export class BookmarkService {
           summaryLong,
           imagePath,
           imagePaths,
+          tags,
         });
         publishedTo.push(publisher.name);
       } catch (err) {
@@ -155,6 +167,7 @@ export class BookmarkService {
       imageUrl: meta.image,
       imagePath,
       imagePaths,
+      tags,
       publishedTo,
       createdAt: new Date().toISOString(),
     };
@@ -243,6 +256,7 @@ Respond with ONLY valid JSON, no markdown fences:
       imageUrl: row.image_url,
       imagePath: row.image_path,
       imagePaths: JSON.parse(row.image_paths || "[]"),
+      tags: JSON.parse(row.tags || "[]"),
       publishedTo: JSON.parse(row.published_to || "[]"),
       createdAt: row.created_at,
     };
@@ -563,4 +577,56 @@ async function fetchYouTubeTranscript(url: string): Promise<string> {
   const transcript = lines.join(" ").slice(0, 5000);
   console.log(`[bookmark] YouTube transcript: extracted ${transcript.length} chars`);
   return transcript;
+}
+
+async function classifyYouTubeVideo(url: string): Promise<VideoCategory> {
+  try {
+    const proc = Bun.spawn(
+      ["yt-dlp", "--dump-json", "--no-download", "--no-playlist", url],
+      { stdout: "pipe", stderr: "pipe" }
+    );
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      console.warn("[bookmark] YouTube classify: yt-dlp --dump-json failed");
+      return "other";
+    }
+
+    const json = JSON.parse(await new Response(proc.stdout).text());
+    const cat = (json.categories?.[0] || "").toLowerCase();
+    const tags = (json.tags || []).join(" ").toLowerCase();
+    const title = (json.title || "").toLowerCase();
+    const desc = (json.description || "").slice(0, 500).toLowerCase();
+    const dur = json.duration || 0;
+    const combined = `${title} ${tags} ${desc}`;
+
+    // DJ mix: Music category + long duration or mix/set keywords
+    if (cat === "music" && (dur > 1200 || /\b(mix|set|session|b2b|marathon|continuous)\b/.test(combined))) {
+      console.log(`[bookmark] YouTube classify: dj_mix (duration=${dur}s, cat=${cat})`);
+      return "dj_mix";
+    }
+
+    // Music video: Music category, typical single-track duration
+    if (cat === "music") {
+      console.log(`[bookmark] YouTube classify: music_video (duration=${dur}s, cat=${cat})`);
+      return "music_video";
+    }
+
+    // Trailer: short + trailer/teaser keywords
+    if (/\b(trailer|teaser|official\s+trailer)\b/.test(combined) && dur < 300) {
+      console.log(`[bookmark] YouTube classify: trailer (duration=${dur}s)`);
+      return "trailer";
+    }
+
+    // Cooking: food/recipe keywords in title, tags, or description
+    if (/\b(recipe|cook(ing|ed)?|bak(e|ing)|cuisine|kitchen|chef|meal\s+prep|food)\b/.test(combined)) {
+      console.log(`[bookmark] YouTube classify: cooking`);
+      return "cooking";
+    }
+
+    console.log(`[bookmark] YouTube classify: other (cat=${cat}, duration=${dur}s)`);
+    return "other";
+  } catch (err) {
+    console.warn("[bookmark] YouTube classify failed:", err);
+    return "other";
+  }
 }

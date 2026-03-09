@@ -11,7 +11,8 @@ export class TelegramChannelPublisher implements Publisher {
   ) {}
 
   async publish(payload: PublishPayload): Promise<void> {
-    const text = `**${payload.title}**\n\n${payload.summaryLong}\n\n${payload.url}`;
+    const hashtags = (payload.tags || []).map((t) => `#${t.replace(/[^a-zA-Z0-9]/g, "")}`).join(" ");
+    const text = `**${payload.title}**\n\n${payload.summaryLong}\n\n${hashtags ? `${hashtags}\n\n` : ""}${payload.url}`;
 
     if (payload.imagePath) {
       await this.bot.api.sendPhoto(this.channelId, new InputFile(payload.imagePath), {
