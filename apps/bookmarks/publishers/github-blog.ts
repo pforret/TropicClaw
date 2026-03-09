@@ -43,6 +43,10 @@ export class GitHubBlogPublisher implements Publisher {
       if (!heroImageUrl) heroImageUrl = publicUrl;
     }
 
+    const tagsList = payload.tags?.length
+      ? `tags:\n${payload.tags.map((t) => `  - "${t}"`).join("\n")}`
+      : null;
+
     const frontmatter = [
       "---",
       `title: "${payload.title.replace(/"/g, '\\"')}"`,
@@ -50,6 +54,7 @@ export class GitHubBlogPublisher implements Publisher {
       `pubDate: "${new Date().toISOString()}"`,
       `url: "${payload.url}"`,
       heroImageUrl ? `heroImage: "${heroImageUrl}"` : null,
+      tagsList,
       "---",
     ]
       .filter(Boolean)

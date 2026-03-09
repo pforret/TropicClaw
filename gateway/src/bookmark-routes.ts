@@ -26,6 +26,9 @@ export function registerBookmarkRoutes(router: Router, bookmarkService: Bookmark
           "",
           `${bookmark.url}`,
         ];
+        if (bookmark.tags.length > 0) {
+          lines.push("", `Tags: ${bookmark.tags.join(", ")}`);
+        }
         if (bookmark.publishedTo.length > 0) {
           lines.push("", `Published to: ${bookmark.publishedTo.join(", ")}`);
         }
