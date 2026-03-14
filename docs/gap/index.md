@@ -15,6 +15,7 @@ This directory maps each OpenClaw subsystem against Claude Code's native capabil
 | 7 | [Persona Templates](07-persona-templates.md)   | **GREEN/YELLOW**     | `CLAUDE.md`, claude-memory-mcp identity anchors               | No structured user model, no device registry                   |
 | 8 | [Autonomy & Trust](08-autonomy-trust.md)       | **GREEN** (pending)  | `allowed-tools`, trust-enforcer hook, tropiclog audit trail   | Implement `trust-enforcer.sh` hook (designed in Gateway PRP)   |
 | 9 | [Web App Generation](09-web-app-generation.md) | **YELLOW/RED**       | Full-stack app generation, Bash dev servers, Claude in Chrome  | No Canvas/A2UI live rendering surface                          |
+| 10 | [Integrations](10-integrations.md)             | **YELLOW**           | MCP servers, `gh` CLI, Claude in Chrome, tropicron            | No integration registry, no credential mgmt, no event triggers |
 
 ## Build Priority
 
